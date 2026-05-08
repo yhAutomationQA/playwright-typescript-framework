@@ -23,6 +23,7 @@ pipeline {
         ENV = "${params.ENVIRONMENT}"
         CI = 'true'
         SNYK_TOKEN = credentials('snyk-token')
+        PATH = '/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin'
     }
 
     stages {
