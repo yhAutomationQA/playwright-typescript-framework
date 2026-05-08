@@ -12,6 +12,11 @@ export const testData = {
     password: 'wrong_password',
   },
   inventoryUrl: 'https://www.saucedemo.com/inventory.html',
+  cartUrl: 'https://www.saucedemo.com/cart.html',
+  inventoryItem: {
+    name: 'Sauce Labs Backpack',
+    price: '$29.99',
+  },
 };
 
 export const apiTestData = {
