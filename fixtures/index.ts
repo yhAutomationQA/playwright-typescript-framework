@@ -3,6 +3,8 @@ import { LoginPage } from '../pages/LoginPage';
 import { InventoryPage } from '../pages/InventoryPage';
 import { CartPage } from '../pages/CartPage';
 import { ApiHelper } from '../helpers/api-helper';
+import { ApiClient } from '../helpers/api-client';
+import { config } from '../config/env-manager';
 import { testData } from '../utils/test-data';
 
 type MyFixtures = {
@@ -10,6 +12,7 @@ type MyFixtures = {
   inventoryPage: InventoryPage;
   cartPage: CartPage;
   apiHelper: ApiHelper;
+  apiClient: ApiClient;
 };
 
 export const test = base.extend<MyFixtures>({
@@ -41,6 +44,11 @@ export const test = base.extend<MyFixtures>({
   apiHelper: async ({ request }, use) => {
     const api = new ApiHelper(request);
     await use(api);
+  },
+
+  apiClient: async ({ request }, use) => {
+    const client = new ApiClient(request, config.apiBaseUrl);
+    await use(client);
   },
 });
 

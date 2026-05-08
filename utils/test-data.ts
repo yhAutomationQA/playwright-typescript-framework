@@ -27,4 +27,10 @@ export const apiTestData = {
     body: 'This is a test post body.',
     userId: 1,
   },
+  updatePostPayload: {
+    id: 1,
+    title: 'Updated Post',
+    body: 'This is an updated post body.',
+    userId: 1,
+  },
 };
