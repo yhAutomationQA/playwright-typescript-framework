@@ -49,7 +49,6 @@ Each environment reads from `.env.<env>`. Local overrides go in `.env` (gitignor
 ## Project Structure
 
 ```
-├── api/                  API client utilities
 ├── config/
 │   ├── env-manager.ts    Centralized environment loader
 │   └── README.md
@@ -60,11 +59,13 @@ Each environment reads from `.env.<env>`. Local overrides go in `.env` (gitignor
 │   ├── api-helper.ts     Legacy API helper (backward compat)
 │   ├── header-manager.ts Auth and header management
 │   └── response-validator.ts  Reusable response assertions
+├── logs/                 Test run logs (gitignored)
 ├── pages/
 │   ├── BasePage.ts       Core page object (nav, click, fill, waits)
 │   ├── CartPage.ts       Cart page object
 │   ├── InventoryPage.ts  Inventory page object
 │   └── LoginPage.ts      Login page object
+├── reporters/            Custom reporter implementations
 ├── tests/
 │   ├── api/
 │   │   └── users.spec.ts API tests (GET/POST/PUT/DELETE)
@@ -81,6 +82,7 @@ Each environment reads from `.env.<env>`. Local overrides go in `.env` (gitignor
 ├── .env.qa               QA environment config
 ├── .env.staging          Staging environment config
 ├── .env.example          Environment variable template
+├── .gitignore
 ├── playwright.config.ts
 ├── tsconfig.json
 └── eslint.config.mjs
