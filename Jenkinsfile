@@ -1,21 +1,16 @@
 pipeline {
-    agent {
-        dockerfile {
-            filename 'Dockerfile'
-            args '--ipc=host'
-        }
-    }
+    agent any
 
     parameters {
         choice(
             name: 'ENVIRONMENT',
             choices: ['dev', 'qa', 'staging', 'prod'],
-            description: 'Target test environment'
+            description: 'Target test environment',
         )
         choice(
             name: 'TEST_TYPE',
             choices: ['regression', 'smoke'],
-            description: 'Run full regression or smoke tests only'
+            description: 'Run full regression or smoke tests only',
         )
     }
 
@@ -33,15 +28,15 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies') {
+        stage('Build Docker Image') {
             steps {
-                sh 'npm ci'
+                sh 'docker build -t playwright-tests .'
             }
         }
 
         stage('Lint') {
             steps {
-                sh 'npm run lint'
+                sh 'docker run --rm -v "$PWD:/app" -e CI playwright-tests sh -c "npm run lint"'
             }
         }
 
@@ -51,7 +46,7 @@ pipeline {
             }
             steps {
                 catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
-                    sh 'npm run snyk:test'
+                    sh 'docker run --rm -v "$PWD:/app" -e SNYK_TOKEN playwright-tests sh -c "npm run snyk:test"'
                 }
             }
         }
@@ -64,7 +59,7 @@ pipeline {
                         : 'npx playwright test'
 
                     catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
-                        sh testCmd
+                        sh "docker run --rm -v \"\$PWD:/app\" -e CI -e ENV --ipc=host playwright-tests sh -c \"${testCmd}\""
                     }
                 }
             }
@@ -72,7 +67,7 @@ pipeline {
 
         stage('Generate Reports') {
             steps {
-                sh 'npm run allure:generate || echo "Allure CLI not available — skipping"'
+                sh "docker run --rm -v \"\$PWD:/app\" playwright-tests sh -c 'npm run allure:generate || true'"
             }
         }
 
@@ -81,9 +76,7 @@ pipeline {
                 expression { env.SONAR_HOST_URL != null && env.SONAR_HOST_URL != '' }
             }
             steps {
-                withSonarQubeEnv('SonarQube') {
-                    sh 'npm run sonar:scan'
-                }
+                sh 'docker run --rm -v "$PWD:/app" playwright-tests sh -c "npm run sonar:scan"'
             }
         }
     }
