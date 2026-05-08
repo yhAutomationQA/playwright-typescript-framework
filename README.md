@@ -2,11 +2,6 @@
 
 Enterprise-grade test automation framework using Playwright, TypeScript, and Node.js.
 
-## Prerequisites
-
-- Node.js >= 18
-- npm
-
 ## Setup
 
 ```bash
@@ -14,7 +9,7 @@ npm install
 npx playwright install
 ```
 
-Copy `.env.example` to `.env` and update values as needed:
+No configuration needed for local development — `.env.dev` is loaded by default. To override locally:
 
 ```bash
 cp .env.example .env
@@ -31,68 +26,146 @@ npm run lint          # ESLint
 npm run format        # Prettier format
 ```
 
+### Switching environments
+
+```bash
+ENV=dev npm test       # dev environment (default)
+ENV=qa npm test        # QA environment
+ENV=staging npm test   # staging environment
+ENV=prod npm test      # production environment
+```
+
+Each environment reads from `.env.<env>`. Local overrides go in `.env` (gitignored).
+
 ## Project Structure
 
 ```
-├── api/               API client utilities
-├── config/            Environment configs
-├── fixtures/          Custom Playwright fixtures (setup/teardown)
-├── helpers/           API helper classes
-├── logs/              Test logs (gitignored)
-├── pages/             Page Object Models (BasePage, LoginPage)
-├── reporters/         Custom reporters
-├── test-data/         Static test data files
+├── api/                  API client utilities
+├── config/
+│   ├── env-manager.ts    Centralized environment loader
+│   └── README.md
+├── fixtures/
+│   └── index.ts          Custom Playwright fixtures (setup/teardown)
+├── helpers/
+│   ├── api-client.ts     Typed HTTP client (GET/POST/PUT/DELETE)
+│   ├── api-helper.ts     Legacy API helper (backward compat)
+│   ├── header-manager.ts Auth and header management
+│   └── response-validator.ts  Reusable response assertions
+├── pages/
+│   ├── BasePage.ts       Core page object (nav, click, fill, waits)
+│   ├── CartPage.ts       Cart page object
+│   ├── InventoryPage.ts  Inventory page object
+│   └── LoginPage.ts      Login page object
 ├── tests/
-│   ├── ui/            UI browser tests
-│   └── api/           API tests
-├── utils/             Shared utilities (env-config, waits, test-data)
+│   ├── api/
+│   │   └── users.spec.ts API tests (GET/POST/PUT/DELETE)
+│   └── ui/
+│       ├── inventory.spec.ts  Inventory + cart flow tests
+│       └── login.spec.ts      Login tests
+├── utils/
+│   ├── api-utils.ts      Status codes and URL helpers
+│   ├── env-config.ts     Environment config re-export
+│   ├── test-data.ts      Centralized test data
+│   └── waits.ts          Standalone wait utilities
+├── .env.dev              Dev environment config
+├── .env.qa               QA environment config
+├── .env.staging          Staging environment config
+├── .env.example          Environment variable template
 ├── playwright.config.ts
 ├── tsconfig.json
 └── eslint.config.mjs
 ```
 
-## Writing Tests
+## Page Object Model
 
-### UI tests with Page Object Model
-
-Pages extend `BasePage` for common methods (navigate, click, fill, wait).
+Pages extend `BasePage` for common methods: navigate, click, fill, selectOption, hover, getText, getTexts, isVisible, isHidden, waitForElement, waitForUrl, takeScreenshot, and more.
 
 ```typescript
 import { test, expect } from '../../fixtures';
 
-test('login successfully', async ({ loginPage }) => {
+test('login successfully', async ({ loginPage, page }) => {
   await loginPage.login('standard_user', 'secret_sauce');
   await expect(page).toHaveURL('https://www.saucedemo.com/inventory.html');
 });
 ```
 
-### API tests
+### Available page objects
 
-Use the `apiHelper` fixture for typed HTTP helpers.
+| Page            | Methods                                                                 |
+|-----------------|-------------------------------------------------------------------------|
+| `LoginPage`     | goto, login, getErrorMessage, isLoginButtonVisible                      |
+| `InventoryPage` | goto, getItemCount, getItemNames, addItemToCart, removeItem, getCartCount, goToCart, sortBy |
+| `CartPage`      | goto, getItemCount, getItemNames, removeItem, proceedToCheckout, continueShopping |
+
+## API Testing
+
+### ApiClient
+
+The `apiClient` fixture provides a typed HTTP client with GET, POST, PUT, DELETE and query param support.
 
 ```typescript
 import { test, expect } from '../../fixtures';
 
-test('fetch posts', async ({ apiHelper }) => {
-  const response = await apiHelper.get('/posts');
-  expect(response.status()).toBe(200);
+test('create a post', async ({ apiClient }) => {
+  const response = await apiClient.post('/posts', {
+    data: { title: 'foo', body: 'bar', userId: 1 },
+  });
+  expect(response.status()).toBe(201);
 });
 ```
 
-### Fixtures
+### Response Validator
+
+```typescript
+import { expectStatus, expectJson, expectToHaveKeys } from '../../helpers/response-validator';
+import { HttpStatus } from '../../utils/api-utils';
+
+const response = await apiClient.get('/posts/1');
+await expectStatus(response, HttpStatus.OK);
+await expectJson(response);
+await expectToHaveKeys(response, ['id', 'title', 'body']);
+```
+
+### Header Manager
+
+```typescript
+apiClient.headerManager.setAuth('token123');
+apiClient.headerManager.setApiKey('key-abc');
+```
+
+## Environment Configuration
+
+Config is loaded by `config/env-manager.ts`. It resolves the active environment from the `ENV` variable and exports a typed config object.
+
+| Variable       | Dev default                           | Description          |
+|----------------|---------------------------------------|----------------------|
+| `ENV`          | `dev`                                 | Active environment   |
+| `BASE_URL`     | `https://www.saucedemo.com`           | UI test base URL     |
+| `API_BASE_URL` | `https://jsonplaceholder.typicode.com`| API test base URL    |
+| `TIMEOUT`      | `30000`                               | Default timeout (ms) |
+
+Credentials are loaded from env files — never hardcoded in source.
+
+### Available environments
+
+| File            | Scope                        |
+|-----------------|------------------------------|
+| `.env.dev`      | Dev environment (default)    |
+| `.env.qa`       | QA environment               |
+| `.env.staging`  | Staging environment          |
+| `.env`          | Local overrides (gitignored) |
+
+## Fixtures
 
 Custom fixtures in `fixtures/index.ts` handle setup and teardown automatically:
 
-- `loginPage` — navigates to SauceDemo before each test, clears state after
-- `apiHelper` — creates an `ApiHelper` instance bound to the request context
-
-## Configuration
-
-| Variable       | Default                                | Description          |
-|----------------|----------------------------------------|----------------------|
-| `BASE_URL`     | `https://www.saucedemo.com`            | UI test base URL     |
-| `API_BASE_URL` | `https://jsonplaceholder.typicode.com` | API test base URL    |
-| `TIMEOUT`      | `30000`                                | Default timeout (ms) |
+| Fixture         | Setup                                        | Teardown                      |
+|-----------------|----------------------------------------------|-------------------------------|
+| `loginPage`     | Navigate to SauceDemo login page             | Clear localStorage + cookies  |
+| `inventoryPage` | Log in as standard_user, land on inventory   | —                             |
+| `cartPage`      | Log in as standard_user, land on cart        | —                             |
+| `apiHelper`     | Create ApiHelper instance                    | —                             |
+| `apiClient`     | Create ApiClient with base URL from config   | —                             |
 
 ## CI
 
