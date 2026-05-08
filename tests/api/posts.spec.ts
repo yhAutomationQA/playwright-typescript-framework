@@ -1,13 +1,24 @@
+import { APIResponse } from '@playwright/test';
 import { test, expect } from '../../fixtures';
-import { expectStatus, expectJson, expectToHaveKeys } from '../../helpers/response-validator';
-import { HttpStatus } from '../../utils/api-utils';
+import { HttpStatus } from '../../helpers/api-client';
 import { apiTestData } from '../../utils/test-data';
+
+async function expectStatus(response: APIResponse, status: number): Promise<void> {
+  expect(response.status()).toBe(status);
+}
+
+async function expectToHaveKeys(response: APIResponse, keys: string[]): Promise<void> {
+  const body = await response.json();
+  for (const key of keys) {
+    expect(body).toHaveProperty(key);
+  }
+}
 
 test.describe('JSONPlaceholder API', () => {
   test('GET /posts - should return list of posts', async ({ apiClient }) => {
     const response = await apiClient.get(apiTestData.postsEndpoint);
     await expectStatus(response, HttpStatus.OK);
-    await expectJson(response);
+    expect(response.headers()['content-type']).toContain('application/json');
 
     const body = await response.json();
     expect(Array.isArray(body)).toBeTruthy();

@@ -6,23 +6,20 @@ export class BasePage {
 
   async navigate(url: string): Promise<void> {
     logger.info({ url }, 'navigating');
-    await this.page.goto(url, { waitUntil: 'networkidle' });
+    await this.page.goto(url, { waitUntil: 'load' });
   }
 
   async click(locator: Locator): Promise<void> {
     logger.debug({ selector: locator.toString() }, 'clicking element');
-    await locator.waitFor({ state: 'visible' });
     await locator.click();
   }
 
   async fill(locator: Locator, text: string): Promise<void> {
     logger.debug({ selector: locator.toString(), textLength: text.length }, 'filling element');
-    await locator.waitFor({ state: 'visible' });
     await locator.fill(text);
   }
 
   async selectOption(locator: Locator, value: string): Promise<void> {
-    await locator.waitFor({ state: 'visible' });
     await locator.selectOption(value);
   }
 

@@ -46,9 +46,8 @@ export class InventoryPage extends BasePage {
   }
 
   async getCartCount(): Promise<number> {
-    if (await this.isHidden(this.cartBadge)) return 0;
-    const text = await this.getText(this.cartBadge);
-    return parseInt(text, 10);
+    const count = await this.cartBadge.count();
+    return count === 0 ? 0 : parseInt(await this.getText(this.cartBadge), 10);
   }
 
   async goToCart(): Promise<void> {

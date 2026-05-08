@@ -1,6 +1,23 @@
 import { APIRequestContext, APIResponse } from '@playwright/test';
 import { logger } from '../utils/logger';
-import { HeaderManager, HttpHeaders } from './header-manager';
+
+export type HttpHeaders = Record<string, string>;
+
+export const HttpStatus = {
+  OK: 200,
+  CREATED: 201,
+  NO_CONTENT: 204,
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  SERVER_ERROR: 500,
+} as const;
+
+const defaultHeaders: HttpHeaders = {
+  'Content-Type': 'application/json',
+  Accept: 'application/json',
+};
 
 export interface RequestOptions {
   headers?: HttpHeaders;
@@ -10,18 +27,22 @@ export interface RequestOptions {
 }
 
 export class ApiClient {
-  private headers: HeaderManager;
+  private headers: HttpHeaders;
 
   constructor(
     private request: APIRequestContext,
     private baseUrl: string,
-    defaultHeaders?: HttpHeaders,
+    extraHeaders?: HttpHeaders,
   ) {
-    this.headers = new HeaderManager(defaultHeaders);
+    this.headers = { ...defaultHeaders, ...extraHeaders };
   }
 
-  get headerManager(): HeaderManager {
-    return this.headers;
+  setHeader(key: string, value: string): void {
+    this.headers[key] = value;
+  }
+
+  removeHeader(key: string): void {
+    delete this.headers[key];
   }
 
   private buildUrl(endpoint: string, params?: Record<string, string | number>): string {
@@ -32,15 +53,9 @@ export class ApiClient {
     return `${url}?${searchParams.toString()}`;
   }
 
-  private async logResponse(method: string, url: string, response: APIResponse): Promise<void> {
+  private logResponse(method: string, url: string, response: APIResponse): void {
     logger.info(
-      {
-        method,
-        url,
-        status: response.status(),
-        statusText: response.statusText(),
-        duration: await Promise.resolve(0),
-      },
+      { method, url, status: response.status(), statusText: response.statusText() },
       `${method} ${response.status()}`,
     );
   }
@@ -49,7 +64,7 @@ export class ApiClient {
     const url = this.buildUrl(endpoint, options?.params);
     logger.debug({ method: 'GET', url }, 'api request');
     const response = await this.request.get(url, {
-      headers: this.headers.merge(options?.headers),
+      headers: { ...this.headers, ...options?.headers },
       timeout: options?.timeout,
     });
     await this.logResponse('GET', url, response);
@@ -60,7 +75,7 @@ export class ApiClient {
     const url = this.buildUrl(endpoint, options?.params);
     logger.debug({ method: 'POST', url }, 'api request');
     const response = await this.request.post(url, {
-      headers: this.headers.merge(options?.headers),
+      headers: { ...this.headers, ...options?.headers },
       data: options?.data,
       timeout: options?.timeout,
     });
@@ -72,7 +87,7 @@ export class ApiClient {
     const url = this.buildUrl(endpoint, options?.params);
     logger.debug({ method: 'PUT', url }, 'api request');
     const response = await this.request.put(url, {
-      headers: this.headers.merge(options?.headers),
+      headers: { ...this.headers, ...options?.headers },
       data: options?.data,
       timeout: options?.timeout,
     });
@@ -84,7 +99,7 @@ export class ApiClient {
     const url = this.buildUrl(endpoint, options?.params);
     logger.debug({ method: 'DELETE', url }, 'api request');
     const response = await this.request.delete(url, {
-      headers: this.headers.merge(options?.headers),
+      headers: { ...this.headers, ...options?.headers },
       timeout: options?.timeout,
     });
     await this.logResponse('DELETE', url, response);

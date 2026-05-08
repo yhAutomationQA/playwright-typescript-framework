@@ -15,24 +15,8 @@ export interface EnvironmentConfig {
   isCI: boolean;
 }
 
-const envDefaults: Record<Environment, { baseUrl: string; apiBaseUrl: string }> = {
-  dev: {
-    baseUrl: 'https://www.saucedemo.com',
-    apiBaseUrl: 'https://jsonplaceholder.typicode.com',
-  },
-  qa: {
-    baseUrl: 'https://www.saucedemo.com',
-    apiBaseUrl: 'https://jsonplaceholder.typicode.com',
-  },
-  staging: {
-    baseUrl: 'https://www.saucedemo.com',
-    apiBaseUrl: 'https://jsonplaceholder.typicode.com',
-  },
-  prod: {
-    baseUrl: 'https://www.saucedemo.com',
-    apiBaseUrl: 'https://jsonplaceholder.typicode.com',
-  },
-};
+const defaultBaseUrl = 'https://www.saucedemo.com';
+const defaultApiBaseUrl = 'https://jsonplaceholder.typicode.com';
 
 const validEnvs = ['dev', 'qa', 'staging', 'prod'];
 
@@ -49,12 +33,10 @@ function buildConfig(): EnvironmentConfig {
   dotenv.config({ path: envFile });
   dotenv.config({ path: localFile });
 
-  const defaults = envDefaults[env];
-
   return {
     env,
-    baseUrl: process.env.BASE_URL || defaults.baseUrl,
-    apiBaseUrl: process.env.API_BASE_URL || defaults.apiBaseUrl,
+    baseUrl: process.env.BASE_URL || defaultBaseUrl,
+    apiBaseUrl: process.env.API_BASE_URL || defaultApiBaseUrl,
     credentials: {
       username: process.env.USERNAME || '',
       password: process.env.PASSWORD || '',
