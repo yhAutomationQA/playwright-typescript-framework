@@ -62,6 +62,17 @@ pipeline {
                 sh 'npm run allure:generate || echo "Allure CLI not available — skipping"'
             }
         }
+
+        stage('SonarQube Analysis') {
+            when {
+                environment name: 'SONAR_HOST_URL', value: ''
+            }
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh 'npm run sonar:scan'
+                }
+            }
+        }
     }
 
     post {

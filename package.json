@@ -13,7 +13,9 @@
     "allure:generate": "allure generate allure-results -o allure-report --clean",
     "allure:open": "allure open allure-report",
     "docker:test": "docker compose up --build --abort-on-container-exit",
-    "docker:bash": "docker compose run --rm playwright-tests bash"
+    "docker:bash": "docker compose run --rm playwright-tests bash",
+    "sonar:scan": "sonar-scanner",
+"sonar:scan:dry": "sonar-scanner -Dsonar.analysis.mode=preview -Dsonar.issuesReport.html.enable=true"
   },
   "keywords": [
     "playwright",
@@ -44,6 +46,7 @@
     "eslint-plugin-playwright": "^2.2.0",
     "pino": "^10.3.1",
     "prettier": "^3.5.3",
+    "sonarqube-scanner": "^4.3.6",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   }
