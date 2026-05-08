@@ -14,7 +14,7 @@ npm install
 npx playwright install
 ```
 
-Copy `.env.example` to `.env` and update values as needed:
+Environment files are preconfigured — no manual setup needed to run in `dev` (default). For local overrides:
 
 ```bash
 cp .env.example .env
@@ -30,6 +30,17 @@ npm run test:headed   # all tests, headed mode
 npm run lint          # ESLint
 npm run format        # Prettier format
 ```
+
+### Switching environments
+
+```bash
+ENV=qa npm test            # QA environment
+ENV=staging npm test       # Staging
+ENV=prod npm test          # Production
+ENV=dev npm test           # Dev (default)
+```
+
+Each environment reads from `.env.<env>` (e.g. `.env.qa`). Local overrides go in `.env` (gitignored).
 
 ## Project Structure
 
@@ -88,11 +99,24 @@ Custom fixtures in `fixtures/index.ts` handle setup and teardown automatically:
 
 ## Configuration
 
-| Variable       | Default                                | Description          |
-|----------------|----------------------------------------|----------------------|
-| `BASE_URL`     | `https://www.saucedemo.com`            | UI test base URL     |
-| `API_BASE_URL` | `https://jsonplaceholder.typicode.com` | API test base URL    |
-| `TIMEOUT`      | `30000`                                | Default timeout (ms) |
+Environment-specific config files live in the project root:
+
+| File            | Scope                        |
+|-----------------|------------------------------|
+| `.env.dev`      | Dev environment (default)    |
+| `.env.qa`       | QA environment               |
+| `.env.staging`  | Staging environment          |
+| `.env`          | Local overrides (gitignored) |
+
+Set `ENV` to switch: `ENV=qa npm test`.
+
+All configs are loaded through `config/env-manager.ts` — the single source of truth. It resolves the active environment and exports a typed `config` object used by both Playwright config and test helpers.
+
+| Variable       | Dev default                           | Description          |
+|----------------|---------------------------------------|----------------------|
+| `BASE_URL`     | `https://www.saucedemo.com`           | UI test base URL     |
+| `API_BASE_URL` | `https://jsonplaceholder.typicode.com`| API test base URL    |
+| `TIMEOUT`      | `30000`                               | Default timeout (ms) |
 
 ## CI
 
