@@ -1,0 +1,12 @@
+node_modules/
+logs/
+test-results/
+playwright-report/
+allure-results/
+allure-report/
+screenshots/
+dist/
+.git/
+.gitignore
+.DS_Store
+*.log

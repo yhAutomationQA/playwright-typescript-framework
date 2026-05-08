@@ -226,6 +226,38 @@ LOG_LEVEL=warn npm test     # warnings and errors only
 
 The logger is reused across UI (BasePage) and API (ApiClient) layers. Navigations and API calls log at `info` level. Element actions (click, fill) log at `debug` level.
 
+## Docker
+
+The framework runs inside a Docker container using the official Playwright image (includes Chromium, Firefox, WebKit and all system dependencies).
+
+Build and run all tests:
+
+```bash
+npm run docker:test
+```
+
+Run with a specific environment:
+
+```bash
+ENV=qa npm run docker:test
+```
+
+Open a bash shell inside the container:
+
+```bash
+npm run docker:bash
+```
+
+Output directories (`test-results/`, `playwright-report/`, `allure-results/`, `screenshots/`, `logs/`) are mounted from the container back to the host so results persist after the container exits.
+
+### Docker structure
+
+| File                | Purpose                                  |
+|---------------------|------------------------------------------|
+| `Dockerfile`        | Builds image from `mcr.microsoft.com/playwright`, installs deps, copies source |
+| `docker-compose.yml`| Mounts output volumes, sets `ENV` and `CI` |
+| `.dockerignore`     | Excludes `node_modules/`, logs, output directories from the build context |
+
 ## CI
 
 Set `CI=true` to enable retries (2 per test) and reduce parallel workers.

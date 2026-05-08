@@ -11,7 +11,9 @@
     "format": "prettier --write \"**/*.ts\"",
     "format:check": "prettier --check \"**/*.ts\"",
     "allure:generate": "allure generate allure-results -o allure-report --clean",
-    "allure:open": "allure open allure-report"
+    "allure:open": "allure open allure-report",
+    "docker:test": "docker compose up --build --abort-on-container-exit",
+    "docker:bash": "docker compose run --rm playwright-tests bash"
   },
   "keywords": [
     "playwright",
