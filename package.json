@@ -15,7 +15,10 @@
     "docker:test": "docker compose up --build --abort-on-container-exit",
     "docker:bash": "docker compose run --rm playwright-tests bash",
     "sonar:scan": "sonar-scanner",
-"sonar:scan:dry": "sonar-scanner -Dsonar.analysis.mode=preview -Dsonar.issuesReport.html.enable=true"
+    "sonar:scan:dry": "sonar-scanner -Dsonar.analysis.mode=preview -Dsonar.issuesReport.html.enable=true",
+    "snyk:auth": "snyk auth",
+    "snyk:test": "snyk test",
+    "snyk:monitor": "snyk monitor"
   },
   "keywords": [
     "playwright",
@@ -46,6 +49,7 @@
     "eslint-plugin-playwright": "^2.2.0",
     "pino": "^10.3.1",
     "prettier": "^3.5.3",
+    "snyk": "^1.1304.2",
     "sonarqube-scanner": "^4.3.6",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"

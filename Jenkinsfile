@@ -43,6 +43,17 @@ pipeline {
             }
         }
 
+        stage('Snyk Security Scan') {
+            when {
+                environment name: 'SNYK_TOKEN', value: ''
+            }
+            steps {
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    sh 'npm run snyk:test'
+                }
+            }
+        }
+
         stage('Execute Tests') {
             steps {
                 script {
