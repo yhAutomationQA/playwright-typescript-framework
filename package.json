@@ -1,12 +1,17 @@
 {
   "name": "playwright-typescript-framework",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Enterprise-grade Playwright + TypeScript automation framework",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npx playwright test",
+    "test:ui": "npx playwright test tests/ui",
+    "test:api": "npx playwright test tests/api",
+    "test:headed": "npx playwright test --headed",
+    "lint": "eslint . --ext .ts",
+    "format": "prettier --write \"**/*.ts\"",
+    "format:check": "prettier --check \"**/*.ts\""
   },
-  "keywords": [],
+  "keywords": ["playwright", "typescript", "testing", "automation"],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
@@ -17,5 +22,18 @@
   "bugs": {
     "url": "https://github.com/yhAutomationQA/playwright-typescript-framework/issues"
   },
-  "homepage": "https://github.com/yhAutomationQA/playwright-typescript-framework#readme"
+  "homepage": "https://github.com/yhAutomationQA/playwright-typescript-framework#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@types/node": "^22.15.3",
+    "@typescript-eslint/eslint-plugin": "^8.31.1",
+    "@typescript-eslint/parser": "^8.31.1",
+    "dotenv": "^16.5.0",
+    "eslint": "^9.26.0",
+    "eslint-config-prettier": "^10.1.2",
+    "eslint-plugin-playwright": "^2.2.0",
+    "prettier": "^3.5.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
 }
