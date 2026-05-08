@@ -88,6 +88,7 @@ pipeline {
 
     post {
         always {
+            sh 'mkdir -p screenshots logs'
             archiveArtifacts artifacts: 'playwright-report/**', allowEmptyArchive: true
             archiveArtifacts artifacts: 'allure-results/**', allowEmptyArchive: true
             archiveArtifacts artifacts: 'test-results/**', allowEmptyArchive: true
