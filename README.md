@@ -26,6 +26,15 @@ npm run lint          # ESLint
 npm run format        # Prettier format
 ```
 
+### Allure reports
+
+```bash
+npm run allure:generate   # generate Allure report from results
+npm run allure:open       # open Allure report in browser
+```
+
+Allure results are collected automatically on every test run. Generate the report to view.
+
 ### Switching environments
 
 ```bash
@@ -65,6 +74,7 @@ Each environment reads from `.env.<env>`. Local overrides go in `.env` (gitignor
 ├── utils/
 │   ├── api-utils.ts      Status codes and URL helpers
 │   ├── env-config.ts     Environment config re-export
+│   ├── logger.ts         Pino-based logging utility
 │   ├── test-data.ts      Centralized test data
 │   └── waits.ts          Standalone wait utilities
 ├── .env.dev              Dev environment config
@@ -166,6 +176,53 @@ Custom fixtures in `fixtures/index.ts` handle setup and teardown automatically:
 | `cartPage`      | Log in as standard_user, land on cart        | —                             |
 | `apiHelper`     | Create ApiHelper instance                    | —                             |
 | `apiClient`     | Create ApiClient with base URL from config   | —                             |
+
+## Reporting
+
+Reports are generated automatically on every test run.
+
+| Report  | Output            | Setup                                  |
+|---------|-------------------|----------------------------------------|
+| HTML    | `playwright-report/` | Built-in, configured in `playwright.config.ts` |
+| Allure  | `allure-results/` | Added via `allure-playwright` reporter |
+
+Generate and view Allure:
+
+```bash
+npm run allure:generate
+npm run allure:open
+```
+
+### Failure artifacts
+
+| Artifact   | Condition        | Location          |
+|------------|------------------|-------------------|
+| Screenshot | On failure       | `test-results/`   |
+| Trace      | First retry      | `test-results/`   |
+| Video      | On failure       | `test-results/`   |
+
+Configured in `playwright.config.ts` under `use`.
+
+## Logging
+
+A Pino-based logger writes to `logs/run-<timestamp>.log` for each test execution.
+
+```typescript
+import { logger } from '../utils/logger';
+
+logger.info('test step started');
+logger.error({ error }, 'request failed');
+logger.debug({ responseStatus: 200 }, 'response received');
+```
+
+Set `LOG_LEVEL` to control verbosity (default: `info`):
+
+```bash
+LOG_LEVEL=debug npm test    # include debug logs
+LOG_LEVEL=warn npm test     # warnings and errors only
+```
+
+The logger is reused across UI (BasePage) and API (ApiClient) layers. Navigations and API calls log at `info` level. Element actions (click, fill) log at `debug` level.
 
 ## CI
 

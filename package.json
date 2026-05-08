@@ -9,7 +9,9 @@
     "test:headed": "npx playwright test --headed",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write \"**/*.ts\"",
-    "format:check": "prettier --check \"**/*.ts\""
+    "format:check": "prettier --check \"**/*.ts\"",
+    "allure:generate": "allure generate allure-results -o allure-report --clean",
+    "allure:open": "allure open allure-report"
   },
   "keywords": [
     "playwright",
@@ -33,10 +35,12 @@
     "@types/node": "^22.15.3",
     "@typescript-eslint/eslint-plugin": "^8.31.1",
     "@typescript-eslint/parser": "^8.31.1",
+    "allure-playwright": "^3.7.2",
     "dotenv": "^16.5.0",
     "eslint": "^9.26.0",
     "eslint-config-prettier": "^10.1.2",
     "eslint-plugin-playwright": "^2.2.0",
+    "pino": "^10.3.1",
     "prettier": "^3.5.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"

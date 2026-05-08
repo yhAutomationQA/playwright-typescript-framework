@@ -1,4 +1,5 @@
 import { APIRequestContext, APIResponse } from '@playwright/test';
+import { logger } from '../utils/logger';
 import { HeaderManager, HttpHeaders } from './header-manager';
 
 export interface RequestOptions {
@@ -31,33 +32,62 @@ export class ApiClient {
     return `${url}?${searchParams.toString()}`;
   }
 
+  private async logResponse(method: string, url: string, response: APIResponse): Promise<void> {
+    logger.info(
+      {
+        method,
+        url,
+        status: response.status(),
+        statusText: response.statusText(),
+        duration: await Promise.resolve(0),
+      },
+      `${method} ${response.status()}`,
+    );
+  }
+
   async get(endpoint: string, options?: RequestOptions): Promise<APIResponse> {
-    return this.request.get(this.buildUrl(endpoint, options?.params), {
+    const url = this.buildUrl(endpoint, options?.params);
+    logger.debug({ method: 'GET', url }, 'api request');
+    const response = await this.request.get(url, {
       headers: this.headers.merge(options?.headers),
       timeout: options?.timeout,
     });
+    await this.logResponse('GET', url, response);
+    return response;
   }
 
   async post(endpoint: string, options?: RequestOptions): Promise<APIResponse> {
-    return this.request.post(this.buildUrl(endpoint, options?.params), {
+    const url = this.buildUrl(endpoint, options?.params);
+    logger.debug({ method: 'POST', url }, 'api request');
+    const response = await this.request.post(url, {
       headers: this.headers.merge(options?.headers),
       data: options?.data,
       timeout: options?.timeout,
     });
+    await this.logResponse('POST', url, response);
+    return response;
   }
 
   async put(endpoint: string, options?: RequestOptions): Promise<APIResponse> {
-    return this.request.put(this.buildUrl(endpoint, options?.params), {
+    const url = this.buildUrl(endpoint, options?.params);
+    logger.debug({ method: 'PUT', url }, 'api request');
+    const response = await this.request.put(url, {
       headers: this.headers.merge(options?.headers),
       data: options?.data,
       timeout: options?.timeout,
     });
+    await this.logResponse('PUT', url, response);
+    return response;
   }
 
   async delete(endpoint: string, options?: RequestOptions): Promise<APIResponse> {
-    return this.request.delete(this.buildUrl(endpoint, options?.params), {
+    const url = this.buildUrl(endpoint, options?.params);
+    logger.debug({ method: 'DELETE', url }, 'api request');
+    const response = await this.request.delete(url, {
       headers: this.headers.merge(options?.headers),
       timeout: options?.timeout,
     });
+    await this.logResponse('DELETE', url, response);
+    return response;
   }
 }

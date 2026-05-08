@@ -1,9 +1,11 @@
 import { Page, Locator } from '@playwright/test';
+import { logger } from '../utils/logger';
 
 export class BasePage {
   constructor(protected page: Page) {}
 
   async navigate(url: string): Promise<void> {
+    logger.info({ url }, 'navigating');
     await this.page.goto(url, { waitUntil: 'networkidle' });
   }
 
@@ -12,15 +14,18 @@ export class BasePage {
   }
 
   async reload(): Promise<void> {
+    logger.info('reloading page');
     await this.page.reload({ waitUntil: 'networkidle' });
   }
 
   async click(locator: Locator): Promise<void> {
+    logger.debug({ selector: locator.toString() }, 'clicking element');
     await locator.waitFor({ state: 'visible' });
     await locator.click();
   }
 
   async fill(locator: Locator, text: string): Promise<void> {
+    logger.debug({ selector: locator.toString(), textLength: text.length }, 'filling element');
     await locator.waitFor({ state: 'visible' });
     await locator.fill(text);
   }
