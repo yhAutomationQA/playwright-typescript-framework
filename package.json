@@ -11,12 +11,7 @@
     "format": "prettier --write \"**/*.ts\"",
     "format:check": "prettier --check \"**/*.ts\""
   },
-  "keywords": [
-    "playwright",
-    "typescript",
-    "testing",
-    "automation"
-  ],
+  "keywords": ["playwright", "typescript", "testing", "automation"],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
