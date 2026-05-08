@@ -7,7 +7,7 @@
     "test:ui": "npx playwright test tests/ui",
     "test:api": "npx playwright test tests/api",
     "test:headed": "npx playwright test --headed",
-    "lint": "eslint . --ext .ts",
+    "lint": "eslint .",
     "format": "prettier --write \"**/*.ts\"",
     "format:check": "prettier --check \"**/*.ts\"",
     "allure:generate": "allure generate allure-results -o allure-report --clean",

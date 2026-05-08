@@ -22,6 +22,7 @@ pipeline {
     environment {
         ENV = "${params.ENVIRONMENT}"
         CI = 'true'
+        SNYK_TOKEN = credentials('snyk-token')
     }
 
     stages {
@@ -45,7 +46,7 @@ pipeline {
 
         stage('Snyk Security Scan') {
             when {
-                environment name: 'SNYK_TOKEN', value: ''
+                expression { env.SNYK_TOKEN != null && env.SNYK_TOKEN != '' }
             }
             steps {
                 catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
@@ -76,7 +77,7 @@ pipeline {
 
         stage('SonarQube Analysis') {
             when {
-                environment name: 'SONAR_HOST_URL', value: ''
+                expression { env.SONAR_HOST_URL != null && env.SONAR_HOST_URL != '' }
             }
             steps {
                 withSonarQubeEnv('SonarQube') {

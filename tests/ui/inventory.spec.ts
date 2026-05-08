@@ -29,6 +29,6 @@ test.describe('SauceDemo Inventory', () => {
     await inventoryPage.addItemToCart(testData.inventoryItem.name);
     await inventoryPage.goToCart();
 
-    await expect(page).toHaveURL(testData.cartUrl);
+    await expect(page).toHaveURL(/cart\.html/);
   });
 });

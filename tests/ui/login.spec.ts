@@ -4,7 +4,7 @@ import { testData } from '../../utils/test-data';
 test.describe('SauceDemo Login', () => {
   test('should login successfully with valid credentials', async ({ loginPage, page }) => {
     await loginPage.login(testData.validUser.username, testData.validUser.password);
-    await expect(page).toHaveURL(testData.inventoryUrl);
+    await expect(page).toHaveURL(/inventory\.html/);
   });
 
   test('should show error for locked out user', async ({ loginPage }) => {

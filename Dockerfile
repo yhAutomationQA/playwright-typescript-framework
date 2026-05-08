@@ -6,7 +6,7 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
-RUN npx playwright install --with-deps chromium
+RUN npx playwright install --with-deps
 
 ENV CI=true
 

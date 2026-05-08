@@ -9,15 +9,6 @@ export class BasePage {
     await this.page.goto(url, { waitUntil: 'networkidle' });
   }
 
-  async getCurrentUrl(): Promise<string> {
-    return this.page.url();
-  }
-
-  async reload(): Promise<void> {
-    logger.info('reloading page');
-    await this.page.reload({ waitUntil: 'networkidle' });
-  }
-
   async click(locator: Locator): Promise<void> {
     logger.debug({ selector: locator.toString() }, 'clicking element');
     await locator.waitFor({ state: 'visible' });
@@ -35,16 +26,6 @@ export class BasePage {
     await locator.selectOption(value);
   }
 
-  async hover(locator: Locator): Promise<void> {
-    await locator.waitFor({ state: 'visible' });
-    await locator.hover();
-  }
-
-  async clear(locator: Locator): Promise<void> {
-    await locator.waitFor({ state: 'visible' });
-    await locator.clear();
-  }
-
   async getText(locator: Locator): Promise<string> {
     return locator.innerText();
   }
@@ -57,16 +38,8 @@ export class BasePage {
     return locator.getAttribute(name);
   }
 
-  async getValue(locator: Locator): Promise<string> {
-    return locator.inputValue();
-  }
-
   async getCount(locator: Locator): Promise<number> {
     return locator.count();
-  }
-
-  async getTitle(): Promise<string> {
-    return this.page.title();
   }
 
   async isVisible(locator: Locator): Promise<boolean> {
@@ -81,20 +54,7 @@ export class BasePage {
     await locator.waitFor({ state: 'visible', timeout });
   }
 
-  async waitForElementHidden(locator: Locator, timeout = 10000): Promise<void> {
-    await locator.waitFor({ state: 'hidden', timeout });
-  }
-
   async waitForUrl(url: string | RegExp, timeout = 10000): Promise<void> {
     await this.page.waitForURL(url, { timeout });
-  }
-
-  async waitForPageLoad(): Promise<void> {
-    await this.page.waitForLoadState('networkidle');
-  }
-
-  async takeScreenshot(name?: string): Promise<void> {
-    const path = name ? `screenshots/${name}.png` : undefined;
-    await this.page.screenshot({ path, fullPage: true });
   }
 }

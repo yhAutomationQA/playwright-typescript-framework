@@ -8,9 +8,3 @@ export const HttpStatus = {
   NOT_FOUND: 404,
   SERVER_ERROR: 500,
 } as const;
-
-export function buildQueryString(params: Record<string, string | number>): string {
-  return Object.entries(params)
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-    .join('&');
-}
