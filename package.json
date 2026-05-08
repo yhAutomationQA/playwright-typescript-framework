@@ -1,0 +1,21 @@
+{
+  "name": "playwright-typescript-framework",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yhAutomationQA/playwright-typescript-framework.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yhAutomationQA/playwright-typescript-framework/issues"
+  },
+  "homepage": "https://github.com/yhAutomationQA/playwright-typescript-framework#readme"
+}
