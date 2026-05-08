@@ -1,12 +1,18 @@
 services:
   playwright-tests:
     build: .
+    command: sh -c "npm ci && npx playwright test"
     environment:
       - ENV=${ENV:-dev}
       - CI=true
     volumes:
+      - .:/app
+      - node_modules:/app/node_modules
       - ./test-results:/app/test-results
       - ./playwright-report:/app/playwright-report
       - ./allure-results:/app/allure-results
       - ./screenshots:/app/screenshots
       - ./logs:/app/logs
+
+volumes:
+  node_modules:

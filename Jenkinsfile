@@ -33,6 +33,12 @@ pipeline {
             }
         }
 
+        stage('Setup') {
+            steps {
+                sh 'docker run --rm -v "$PWD:/app" playwright-tests sh -c "npm ci"'
+            }
+        }
+
         stage('Lint') {
             steps {
                 sh 'docker run --rm -v "$PWD:/app" -e CI playwright-tests sh -c "npm run lint"'
