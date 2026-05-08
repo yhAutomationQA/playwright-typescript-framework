@@ -50,9 +50,9 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - name: Install Playwright browser
+      - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps ${{ matrix.browser }}
+        run: npx playwright install --with-deps ${{ matrix.browser == 'chromium' && 'chromium chromium-headless-shell' || matrix.browser }}
       - name: Run tests
         run: npx playwright test --project=${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
