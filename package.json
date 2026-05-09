@@ -16,6 +16,12 @@
     "docker:bash": "docker compose run --rm playwright-tests bash",
     "sonar:scan": "sonar-scanner",
     "sonar:scan:dry": "sonar-scanner -Dsonar.analysis.mode=preview -Dsonar.issuesReport.html.enable=true",
+    "mcp": "npx ts-node mcp/mcp-server.ts",
+    "mcp:debug": "MCP_MODE=http MCP_HEADLESS=false npx ts-node mcp/mcp-server.ts",
+    "mcp:local": "MCP_MODE=http MCP_PORT=3100 npx ts-node mcp/mcp-server.ts",
+    "mcp:example:login": "npx ts-node mcp/examples/login-automation.ts",
+    "mcp:example:locator": "npx ts-node mcp/examples/locator-inspection.ts",
+    "mcp:example:trace": "npx ts-node mcp/examples/trace-debugging.ts",
     "snyk:auth": "snyk auth",
     "snyk:test": "snyk test",
     "snyk:monitor": "snyk monitor"
@@ -53,5 +59,8 @@
     "sonarqube-scanner": "^4.3.6",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@playwright/mcp": "^0.0.75"
   }
 }

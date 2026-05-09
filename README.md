@@ -284,3 +284,85 @@ Code quality analysis runs automatically via SonarCloud auto-analysis (configure
 
 - **Snyk** — Dependency vulnerability scanning via `snyk test`. Run locally with `npm run snyk:test`.
 - Secrets are never hardcoded — loaded from environment variables and `.env.*` files (gitignored).
+
+## MCP Server (AI Integration)
+
+The framework includes a [Model Context Protocol](https://modelcontextprotocol.io) server that exposes Playwright automation capabilities to AI assistants. This enables AI-driven browser automation, test generation, and debugging.
+
+### What is MCP?
+
+MCP (Model Context Protocol) is an open standard that lets AI assistants (Claude, GPT, etc.) interact with tools and data sources through a standardized interface. The Playwright MCP server exposes browser automation as tools the AI can call.
+
+### Starting the MCP Server
+
+```bash
+# stdio mode (default — for AI assistant integration)
+npm run mcp
+
+# HTTP mode (for remote access or testing)
+npm run mcp:local
+
+# Debug mode (headed browser, HTTP mode)
+npm run mcp:debug
+```
+
+### Configuration
+
+MCP is configured via environment variables:
+
+| Variable            | Default          | Description                                |
+|---------------------|------------------|--------------------------------------------|
+| `MCP_MODE`          | `stdio`          | Transport mode: `stdio` or `http`          |
+| `MCP_PORT`          | `3100`           | HTTP server port                           |
+| `MCP_HOST`          | `localhost`      | HTTP server host                           |
+| `MCP_HEADLESS`      | `true`           | Run browser headless                       |
+| `MCP_BROWSER`       | `chromium`       | Browser: `chromium`, `firefox`, `webkit`   |
+| `MCP_OUTPUT_DIR`    | `./mcp-output`   | Output directory for traces/screenshots    |
+| `MCP_SAVE_SESSION`  | `false`          | Persist browser session to disk            |
+| `MCP_CAPABILITIES`  | `core,network,storage,vision` | Enabled tool categories |
+
+### Capabilities
+
+| Capability | Tools Provided                                      |
+|------------|-----------------------------------------------------|
+| `core`     | Navigate, click, fill, select, hover, scroll, etc.  |
+| `network`  | Inspect requests, responses, network logs           |
+| `storage`  | Cookies, localStorage, sessionStorage management    |
+| `vision`   | Coordinate-based interactions, screenshots          |
+| `pdf`      | PDF generation from pages                           |
+| `devtools` | Chrome DevTools Protocol access (chromium only)     |
+
+### Example Workflows
+
+Run the built-in examples:
+
+```bash
+npm run mcp:example:login   # AI-assisted login with snapshot capture
+npm run mcp:example:locator # Locator inspection and debugging
+npm run mcp:example:trace   # Trace collection for debugging
+```
+
+### How It Works
+
+1. Start the MCP server: `npm run mcp`
+2. Configure your AI assistant to connect to the MCP server (stdio or HTTP)
+3. The AI can now control the browser, inspect pages, capture traces, and more
+4. The server uses the same Playwright version and browser setup as the test framework
+
+### Integration with Existing Framework
+
+- Uses the standard framework's `playwright` (core) dependency
+- MCP output directory (`mcp-output/`) is gitignored
+- Compatible with Docker execution
+- Does not interfere with test execution or existing CI/CD pipelines
+- Reusable utilities (trace, screenshot, locator) are available as library modules
+
+### Troubleshooting
+
+| Issue                          | Solution                                      |
+|--------------------------------|-----------------------------------------------|
+| MCP server won't start         | Ensure `npm install` completed, check Node.js version |
+| Browser not found              | Run `npx playwright install chromium`         |
+| Port already in use            | Set `MCP_PORT` to a different port            |
+| AI assistant not connecting    | Verify transport mode matches (stdio vs HTTP) |
+| Headless mode not working      | Set `MCP_HEADLESS=false` for headed debugging |

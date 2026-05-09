@@ -11,3 +11,4 @@ allure-results/
 allure-report/
 .scannerwork/
 coverage/
+mcp-output/
