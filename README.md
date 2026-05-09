@@ -1,6 +1,6 @@
 # Playwright + TypeScript Automation Framework
 
-Enterprise-grade test automation framework using Playwright, TypeScript, and Node.js.
+Enterprise-grade test automation framework using Playwright, TypeScript, and Node.js. Features POM architecture, multi-environment config, API client, Allure reporting, Docker execution, and CI/CD (Jenkins + GitHub Actions).
 
 ## Setup
 
@@ -50,34 +50,26 @@ Each environment reads from `.env.<env>`. Local overrides go in `.env` (gitignor
 
 ```
 ├── config/
-│   ├── env-manager.ts    Centralized environment loader
-│   └── README.md
+│   └── env-manager.ts    Centralized environment loader
 ├── fixtures/
 │   └── index.ts          Custom Playwright fixtures (setup/teardown)
 ├── helpers/
-│   ├── api-client.ts     Typed HTTP client (GET/POST/PUT/DELETE)
-│   ├── api-helper.ts     Legacy API helper (backward compat)
-│   ├── header-manager.ts Auth and header management
-│   └── response-validator.ts  Reusable response assertions
+│   ├── api-client.ts     Typed HTTP client (GET/POST/PUT/DELETE) + HttpStatus constants
 ├── logs/                 Test run logs (gitignored)
 ├── pages/
 │   ├── BasePage.ts       Core page object (nav, click, fill, waits)
 │   ├── CartPage.ts       Cart page object
 │   ├── InventoryPage.ts  Inventory page object
 │   └── LoginPage.ts      Login page object
-├── reporters/            Custom reporter implementations
 ├── tests/
 │   ├── api/
-│   │   └── users.spec.ts API tests (GET/POST/PUT/DELETE)
+│   │   └── posts.spec.ts API tests (GET/POST/PUT/DELETE)
 │   └── ui/
 │       ├── inventory.spec.ts  Inventory + cart flow tests
 │       └── login.spec.ts      Login tests
 ├── utils/
-│   ├── api-utils.ts      Status codes and URL helpers
-│   ├── env-config.ts     Environment config re-export
 │   ├── logger.ts         Pino-based logging utility
-│   ├── test-data.ts      Centralized test data
-│   └── waits.ts          Standalone wait utilities
+│   └── test-data.ts      Centralized test data
 ├── .env.dev              Dev environment config
 ├── .env.qa               QA environment config
 ├── .env.staging          Staging environment config
@@ -85,21 +77,27 @@ Each environment reads from `.env.<env>`. Local overrides go in `.env` (gitignor
 ├── .gitignore
 ├── playwright.config.ts
 ├── tsconfig.json
-└── eslint.config.mjs
+├── eslint.config.mjs
+├── Dockerfile
+├── docker-compose.yml
+├── Jenkinsfile
+└── sonar-project.properties
 ```
 
 ## Page Object Model
 
-Pages extend `BasePage` for common methods: navigate, click, fill, selectOption, hover, getText, getTexts, isVisible, isHidden, waitForElement, waitForUrl, takeScreenshot, and more.
+Pages extend `BasePage` for common methods: navigate, click, fill, selectOption, getText, getTexts, getAttribute, getCount, isVisible, isHidden, waitForUrl.
 
 ```typescript
-import { test, expect } from '../../fixtures';
+import { test, expect } from '../fixtures';
 
 test('login successfully', async ({ loginPage, page }) => {
   await loginPage.login('standard_user', 'secret_sauce');
   await expect(page).toHaveURL('https://www.saucedemo.com/inventory.html');
 });
 ```
+
+Playwright's built-in auto-waiting handles element visibility and stability — no explicit waitForElement calls needed before actions.
 
 ### Available page objects
 
@@ -111,50 +109,47 @@ test('login successfully', async ({ loginPage, page }) => {
 
 ## API Testing
 
-### ApiClient
-
-The `apiClient` fixture provides a typed HTTP client with GET, POST, PUT, DELETE and query param support.
+The `apiClient` fixture provides a typed HTTP client with GET, POST, PUT, DELETE, query param support, and timeout configuration.
 
 ```typescript
-import { test, expect } from '../../fixtures';
+import { test, expect } from '../fixtures';
+import { HttpStatus } from '../helpers/api-client';
 
 test('create a post', async ({ apiClient }) => {
   const response = await apiClient.post('/posts', {
     data: { title: 'foo', body: 'bar', userId: 1 },
   });
-  expect(response.status()).toBe(201);
+  expect(response.status()).toBe(HttpStatus.CREATED);
 });
 ```
 
-### Response Validator
+### HttpStatus constants
 
 ```typescript
-import { expectStatus, expectJson, expectToHaveKeys } from '../../helpers/response-validator';
-import { HttpStatus } from '../../utils/api-utils';
+import { HttpStatus } from '../helpers/api-client';
 
-const response = await apiClient.get('/posts/1');
-await expectStatus(response, HttpStatus.OK);
-await expectJson(response);
-await expectToHaveKeys(response, ['id', 'title', 'body']);
+expect(response.status()).toBe(HttpStatus.OK);       // 200
+expect(response.status()).toBe(HttpStatus.CREATED);   // 201
+expect(response.status()).toBe(HttpStatus.NOT_FOUND); // 404
 ```
 
-### Header Manager
+### Custom headers
 
 ```typescript
-apiClient.headerManager.setAuth('token123');
-apiClient.headerManager.setApiKey('key-abc');
+apiClient.setHeader('Authorization', 'Bearer token123');
+apiClient.removeHeader('x-api-key');
 ```
 
 ## Environment Configuration
 
 Config is loaded by `config/env-manager.ts`. It resolves the active environment from the `ENV` variable and exports a typed config object.
 
-| Variable       | Dev default                           | Description          |
-|----------------|---------------------------------------|----------------------|
-| `ENV`          | `dev`                                 | Active environment   |
-| `BASE_URL`     | `https://www.saucedemo.com`           | UI test base URL     |
-| `API_BASE_URL` | `https://jsonplaceholder.typicode.com`| API test base URL    |
-| `TIMEOUT`      | `30000`                               | Default timeout (ms) |
+| Variable       | Default                                | Description          |
+|----------------|----------------------------------------|----------------------|
+| `ENV`          | `dev`                                  | Active environment   |
+| `BASE_URL`     | `https://www.saucedemo.com`            | UI test base URL     |
+| `API_BASE_URL` | `https://jsonplaceholder.typicode.com` | API test base URL    |
+| `TIMEOUT`      | `30000`                                | Default timeout (ms) |
 
 Credentials are loaded from env files — never hardcoded in source.
 
@@ -176,7 +171,6 @@ Custom fixtures in `fixtures/index.ts` handle setup and teardown automatically:
 | `loginPage`     | Navigate to SauceDemo login page             | Clear localStorage + cookies  |
 | `inventoryPage` | Log in as standard_user, land on inventory   | —                             |
 | `cartPage`      | Log in as standard_user, land on cart        | —                             |
-| `apiHelper`     | Create ApiHelper instance                    | —                             |
 | `apiClient`     | Create ApiClient with base URL from config   | —                             |
 
 ## Reporting
@@ -254,10 +248,39 @@ Output directories (`test-results/`, `playwright-report/`, `allure-results/`, `s
 
 | File                | Purpose                                  |
 |---------------------|------------------------------------------|
-| `Dockerfile`        | Builds image from `mcr.microsoft.com/playwright`, installs deps, copies source |
+| `Dockerfile`        | Builds image from `mcr.microsoft.com/playwright`, installs Allure CLI |
 | `docker-compose.yml`| Mounts output volumes, sets `ENV` and `CI` |
 | `.dockerignore`     | Excludes `node_modules/`, logs, output directories from the build context |
 
-## CI
+## CI/CD
 
-Set `CI=true` to enable retries (2 per test) and reduce parallel workers.
+### GitHub Actions
+
+The `.github/workflows/ci.yml` pipeline runs on every push/PR:
+
+1. **lint** — ESLint check
+2. **snyk** — Dependency vulnerability scan (gated on `SNYK_TOKEN` secret)
+3. **test** — Matrix across chromium, firefox, webkit (with Playwright browser caching)
+
+Browser binaries are cached and system dependencies are installed fresh each run.
+
+### Jenkins
+
+The `Jenkinsfile` runs a full pipeline inside Docker:
+
+1. Build Docker image
+2. Install dependencies (`npm ci`)
+3. Lint
+4. Snyk security scan (gated on `SNYK_TOKEN` env var)
+5. Execute tests (smoke or regression via parameter)
+6. Generate Allure report
+7. Archive artifacts (reports, screenshots, logs)
+
+### SonarCloud
+
+Code quality analysis runs automatically via SonarCloud auto-analysis (configured in `sonar-project.properties`). Quality gate results are posted to PRs.
+
+## Security
+
+- **Snyk** — Dependency vulnerability scanning via `snyk test`. Run locally with `npm run snyk:test`.
+- Secrets are never hardcoded — loaded from environment variables and `.env.*` files (gitignored).
