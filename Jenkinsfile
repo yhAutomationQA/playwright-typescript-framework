@@ -78,10 +78,10 @@ pipeline {
 
         stage('SonarQube Analysis') {
             when {
-                expression { env.SONAR_HOST_URL != null && env.SONAR_HOST_URL != '' }
+                expression { env.SONAR_TOKEN != null && env.SONAR_TOKEN != '' }
             }
             steps {
-                sh 'docker run --rm -v "$PWD:/app" playwright-tests sh -c "npm run sonar:scan"'
+                sh 'docker run --rm -v "$PWD:/app" -e SONAR_TOKEN playwright-tests sh -c "npm run sonar:scan"'
             }
         }
     }
