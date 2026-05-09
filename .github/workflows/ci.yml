@@ -30,8 +30,28 @@ jobs:
       - run: npm ci
       - run: npm run lint
 
-  test:
+  snyk:
     needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Run Snyk scan
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if [ -z "$SNYK_TOKEN" ]; then
+            echo "SNYK_TOKEN not set — skipping Snyk scan"
+            exit 0
+          fi
+          npx snyk test
+
+  test:
+    needs: [lint, snyk]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
