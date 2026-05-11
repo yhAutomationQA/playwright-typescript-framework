@@ -75,39 +75,17 @@ jobs:
       #   Secrets are NOT expanded directly in run blocks (security linter).
       #   Instead, they are passed via env and checked as env vars.
       # -----------------------------------------------------------------------
-      - name: Validate AI provider configuration
+      - name: Validate OpenAI API key
         id: validate
         env:
-          AI_REVIEW_PROVIDER: ${{ secrets.AI_REVIEW_PROVIDER }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          PROVIDER="${AI_REVIEW_PROVIDER:-openai}"
-          echo "provider=$PROVIDER" >> "$GITHUB_OUTPUT"
-
-          case "$PROVIDER" in
-            openai)
-              if [ -z "$OPENAI_API_KEY" ]; then
-                echo "Error: OPENAI_API_KEY secret is not set."
-                echo "Set it in your repository secrets: Settings > Secrets and variables > Actions"
-                exit 1
-              fi
-              ;;
-            anthropic)
-              if [ -z "$ANTHROPIC_API_KEY" ]; then
-                echo "Error: ANTHROPIC_API_KEY secret is not set."
-                echo "Set it in your repository secrets: Settings > Secrets and variables > Actions"
-                exit 1
-              fi
-              ;;
-            opencode)
-              echo "Using OpenCode CLI (no API key validation needed)."
-              ;;
-            *)
-              echo "Error: Unknown provider '$PROVIDER'. Supported: openai, anthropic, opencode"
-              exit 1
-              ;;
-          esac
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "Error: OPENAI_API_KEY secret is not set."
+            echo "Set it in your repository secrets: Settings > Secrets and variables > Actions"
+            exit 1
+          fi
+          echo "provider=openai" >> "$GITHUB_OUTPUT"
 
       # -----------------------------------------------------------------------
       # Step 2: Check out the PR branch with full git history
@@ -187,11 +165,9 @@ jobs:
       - name: Run AI review (OpenCode)
         id: review
         env:
-          # Secrets passed via env to avoid expanding in run blocks
-          AI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.ANTHROPIC_API_KEY || '' }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           AI_REVIEW_MODEL: ${{ secrets.AI_REVIEW_MODEL || 'gpt-4o' }}
         run: |
-          # Write diff to a temp file so it can be referenced by the prompt
           echo "DIFF_EMPTY=${{ steps.diff.outputs.diff_empty }}" >> $GITHUB_ENV
 
           if [ "${{ steps.diff.outputs.diff_empty }}" = "true" ]; then
@@ -201,41 +177,17 @@ jobs:
             exit 0
           fi
 
-          # Write the diff to a temporary file for the review script
           echo "${{ steps.diff.outputs.diff_content }}" > /tmp/pr-diff.txt
 
-          # Check for opencode CLI
-          if command -v npx &> /dev/null && npx --yes opencode --help &> /dev/null 2>&1; then
-            # Run the review using opencode with the skill and prompt
-            # This approach loads the skill, reads the prompt template, injects the diff
-            echo "Running review via OpenCode..."
-            npx opencode review \
-              --skill .ai/skills/playwright-pr-review.md \
-              --prompt .ai/prompts/pr-review.prompt.md \
-              --diff /tmp/pr-diff.txt \
-              --output /tmp/review-output.txt \
-              --format markdown \
-              2>&1 || true
-
-            if [ -f /tmp/review-output.txt ]; then
-              REVIEW=$(cat /tmp/review-output.txt)
-            else
-              REVIEW="(OpenCode review produced no output)"  
-            fi
-          else
-            # If opencode CLI is not available, try using an AI API directly
-            # Secrets are passed via environment variables, not on the command line,
-            # to avoid security linter warnings and prevent secret leakage in logs.
-            echo "OpenCode CLI not detected. Using AI API fallback..."
-            REVIEW=$(AI_REVIEW_API_KEY="$AI_API_KEY" \
-              node .github/scripts/ai-review.mjs \
-              --provider "${{ steps.validate.outputs.provider }}" \
-              --model "$AI_REVIEW_MODEL" \
-              --skill-file .ai/skills/playwright-pr-review.md \
-              --prompt-file .ai/prompts/pr-review.prompt.md \
-              --diff-file /tmp/pr-diff.txt \
-              2>&1 || echo "(AI review script failed — see logs)")
-          fi
+          echo "Running AI review via OpenAI..."
+          REVIEW=$(OPENAI_API_KEY="$OPENAI_API_KEY" \
+            node .github/scripts/ai-review.mjs \
+            --provider openai \
+            --model "$AI_REVIEW_MODEL" \
+            --skill-file .ai/skills/playwright-pr-review.md \
+            --prompt-file .ai/prompts/pr-review.prompt.md \
+            --diff-file /tmp/pr-diff.txt \
+            2>&1 || echo "(AI review script failed — see logs)")
 
           # Write review output
           echo "review_output<<EOF_REVIEW" >> $GITHUB_OUTPUT
