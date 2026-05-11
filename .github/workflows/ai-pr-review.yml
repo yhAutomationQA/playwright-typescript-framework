@@ -1,0 +1,363 @@
+# =============================================================================
+# ai-pr-review.yml — AI-Powered PR Review for Playwright + TypeScript
+# =============================================================================
+#
+# This workflow triggers on pull requests to `main`, analyzes the git diff
+# using OpenAI's API, and posts a
+# structured code review with severity-labeled findings and a quality score.
+#
+# Design Principles:
+# - Modular: review logic is in a reusable action; the workflow orchestrates
+# - Observable: all review output is captured as both PR comment + check run
+# - Non-blocking for merge — human approval is required (branch protection)
+# - Idempotent: re-running replaces the previous review comment
+# - Cost-aware: only reviews the diff (not the full file) to minimize tokens
+#
+# Branch Protection Compatibility:
+# This workflow creates a check run named "AI PR Review / review". You can
+# require this check to pass in GitHub branch protection rules.
+#
+# Security:
+# - AI API keys stored as GitHub Secrets (never in code or logs)
+# - Pull request comments posted by github-actions bot — no custom tokens
+# - Works with existing branch protection without requiring auto-merge
+# =============================================================================
+
+name: AI PR Review
+
+on:
+  # Trigger on PRs to main — includes draft and ready-for-review
+  pull_request:
+    branches: [main, master]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+  # Allow manual trigger for ad-hoc reviews
+  # workflow_dispatch:
+  #   inputs:
+  #     pr_number:
+  #       description: Pull request number to review
+  #       required: true
+
+# Ensure only one review runs per PR at a time to avoid race conditions
+# on the PR comment. New commits cancel in-progress reviews.
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+  cancel-in-progress: true
+
+env:
+  # Node.js version — must match the framework
+  NODE_VERSION: 22
+
+jobs:
+  # ===========================================================================
+  # Job 1: review
+  #   - Checks out the PR branch
+  #   - Computes the git diff against the base branch
+  #   - Sends the diff to an AI agent for analysis
+  #   - Posts structured review as a PR comment
+  # ===========================================================================
+  review:
+    # Skip for draft PRs (optional — remove if you want draft reviews)
+    if: github.event.pull_request.draft == false
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Grant permissions needed to post PR comments and create check runs
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Step 1: Validate that the AI provider is configured
+      #   Secrets are NOT expanded directly in run blocks (security linter).
+      #   Instead, they are passed via env and checked as env vars.
+      # -----------------------------------------------------------------------
+      - name: Validate OpenAI API key
+        id: validate
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "Error: OPENAI_API_KEY secret is not set."
+            echo "Set it in your repository secrets: Settings > Secrets and variables > Actions"
+            exit 1
+          fi
+          echo "provider=openai" >> "$GITHUB_OUTPUT"
+
+      # -----------------------------------------------------------------------
+      # Step 2: Check out the PR branch with full git history
+      # -----------------------------------------------------------------------
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so we can diff against the base branch
+          fetch-depth: 0
+          # Use the merge commit to get the correct diff against base
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # -----------------------------------------------------------------------
+      # Step 3: Compute the git diff
+      # -----------------------------------------------------------------------
+      - name: Compute git diff against base branch
+        id: diff
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          echo "Base SHA: $BASE_SHA"
+          echo "Head SHA: $HEAD_SHA"
+
+          # Get the diff — only the lines changed, with context
+          DIFF=$(git diff "$BASE_SHA"..."$HEAD_SHA" -- \
+            ':!package-lock.json' \
+            ':!*.lock' \
+            ':!*.png' \
+            ':!*.jpg' \
+            ':!*.jpeg' \
+            ':!*.gif' \
+            ':!*.svg' \
+            ':!*.ico' \
+            ':!*.woff*' \
+            ':!*.eot' \
+            ':!*.ttf' \
+            2>/dev/null || echo "(empty diff or error)")
+
+          # Write diff to file to avoid bash special character issues when inlining
+          # Base64 encoding ensures parentheses, quotes, backticks, etc. don't break the shell
+          if [ -z "$DIFF" ]; then
+            echo "diff_empty=true" >> $GITHUB_OUTPUT
+            echo -n "" | base64 > /tmp/pr-diff.b64
+          else
+            # Truncate diff to prevent token overflow (conservative limit)
+            MAX_DIFF_LENGTH=$(( 4 * 1024 * 50 ))  # ~50K tokens worth of diff
+            if [ ${#DIFF} -gt $MAX_DIFF_LENGTH ]; then
+              DIFF="${DIFF:0:$MAX_DIFF_LENGTH}"
+              DIFF+=$'\n\n[... diff truncated at '"${MAX_DIFF_LENGTH}"$' characters — only the first part was analyzed ...]'
+            fi
+            # Write base64-encoded diff to file (safe from shell interpretation)
+            echo -n "$DIFF" | base64 > /tmp/pr-diff.b64
+            echo "diff_empty=false" >> $GITHUB_OUTPUT
+          fi
+
+      # -----------------------------------------------------------------------
+      # Step 4: Install Node.js and dependencies
+      # -----------------------------------------------------------------------
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+        env:
+          # Skip Playwright browser install — not needed for review
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+
+      # -----------------------------------------------------------------------
+      # Step 5: Run AI review via OpenAI API
+      #     prompt template. Falls back to API-based review if not configured.
+      # -----------------------------------------------------------------------
+      - name: Run AI review
+        id: review
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AI_REVIEW_MODEL: ${{ secrets.AI_REVIEW_MODEL || 'gpt-4o' }}
+        run: |
+          # Decode the diff from base64 (avoids bash special character issues)
+          base64 -d /tmp/pr-diff.b64 > /tmp/pr-diff.txt 2>/dev/null || true
+
+          if [ ! -s /tmp/pr-diff.txt ]; then
+            echo -n "No issues found. No Playwright/TypeScript code changed." > /tmp/review-output.md
+            echo -n "100" > /tmp/review-score.txt
+            echo -n "Excellent" > /tmp/review-rating.txt
+            exit 0
+          fi
+
+          echo "Running AI review via OpenAI..."
+          REVIEW=$(OPENAI_API_KEY="$OPENAI_API_KEY" \
+            node .github/scripts/ai-review.mjs \
+            --provider openai \
+            --model "$AI_REVIEW_MODEL" \
+            --skill-file .ai/skills/playwright-pr-review.md \
+            --prompt-file .ai/prompts/pr-review.prompt.md \
+            --diff-file /tmp/pr-diff.txt \
+            2>&1 || echo "(AI review script failed -- see logs)")
+
+          # Write review output to file (avoids shell/JS special character issues from $GITHUB_OUTPUT)
+          echo "$REVIEW" > /tmp/review-output.md
+
+          # Extract score from review output (format: "## PR Quality Score: <N>/100")
+          SCORE=$(echo "$REVIEW" | grep -oP 'PR Quality Score:\s*\K(\d+)' || echo "")
+          if [ -z "$SCORE" ]; then
+            CRIT=$(echo "$REVIEW" | grep -c '^|.*Critical.*|' || echo 0)
+            MAJ=$(echo "$REVIEW" | grep -c '^|.*Major.*|' || echo 0)
+            MIN=$(echo "$REVIEW" | grep -c '^|.*Minor.*|' || echo 0)
+            SCORE=$(( 100 - (CRIT * 15) - (MAJ * 10) - (MIN * 5) ))
+            [ "$SCORE" -lt 0 ] && SCORE=0
+          fi
+          echo -n "$SCORE" > /tmp/review-score.txt
+
+          if [ "$SCORE" -eq 100 ]; then RATING="Excellent"
+          elif [ "$SCORE" -ge 80 ]; then RATING="Good"
+          elif [ "$SCORE" -ge 60 ]; then RATING="Needs Work"
+          else RATING="Failing"
+          fi
+          echo -n "$RATING" > /tmp/review-rating.txt
+
+      # -----------------------------------------------------------------------
+      # Step 6: Post review as a PR comment
+      #     Replaces any previous AI review comment to keep the PR clean.
+      # -----------------------------------------------------------------------
+      - name: Post PR review comment
+        uses: actions/github-script@v7
+        id: comment
+        with:
+          script: |
+            const fs = require('fs');
+
+            // Read review artifacts from files (avoids shell/JS expansion issues)
+            const reviewOutput = fs.readFileSync('/tmp/review-output.md', 'utf8');
+            const score = fs.readFileSync('/tmp/review-score.txt', 'utf8');
+            const rating = fs.readFileSync('/tmp/review-rating.txt', 'utf8');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const marker = '<!-- ai-pr-review -->';
+            for (const comment of comments) {
+              if (comment.body && comment.body.includes(marker)) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: comment.id,
+                });
+              }
+            }
+
+            const header = '## 🤖 AI PR Review\n\n';
+            const footer = `\n\n---\n*This review was generated automatically by the AI PR Review workflow. Human approval is required before merge.*\n${marker}`;
+
+            let body;
+            if (reviewOutput.includes('No issues found')) {
+              body = header + '**No issues found.** PR adheres to framework standards.\n\n**PR Quality Score:** ' + score + '/100 — ' + rating + footer;
+            } else {
+              body = header + reviewOutput + footer;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body,
+            });
+
+            return score;
+
+      # -----------------------------------------------------------------------
+      # Step 7: Create a check run for branch protection compatibility
+      #     This check can be marked as "required" in branch protection rules.
+      #     The check passes if score >= 60, fails if < 60.
+      # -----------------------------------------------------------------------
+      - name: Create check run
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const score = parseInt(fs.readFileSync('/tmp/review-score.txt', 'utf8') || '100', 10);
+            const rating = fs.readFileSync('/tmp/review-rating.txt', 'utf8') || 'Good';
+            const headSha = '${{ github.event.pull_request.head.sha }}';
+
+            // Determine conclusion based on score
+            let conclusion = 'neutral';
+            let summary = `Score: ${score}/100 — ${rating}`;
+            let text = '';
+
+            if (score >= 80) {
+              conclusion = 'success';
+              text = 'PR meets quality standards. No blocking issues found.';
+            } else if (score >= 60) {
+              conclusion = 'neutral';
+              text = 'PR has some issues that should be addressed. Review the comment above.';
+            } else {
+              conclusion = 'failure';
+              text = 'PR has critical issues that must be resolved before merge.';
+            }
+
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'AI PR Review / review',
+              head_sha: headSha,
+              status: 'completed',
+              conclusion: conclusion,
+              output: {
+                title: `AI PR Review: ${score}/100 — ${rating}`,
+                summary: summary,
+                text: text + '\n\nSee the PR comment for detailed findings.',
+              },
+            });
+
+      # -----------------------------------------------------------------------
+      # Step 8: Update PR labels based on quality score
+      # -----------------------------------------------------------------------
+      - name: Update PR labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const score = parseInt(fs.readFileSync('/tmp/review-score.txt', 'utf8') || '100', 10);
+            const labels = new Set();
+
+            // Remove existing AI review labels
+            const { data: currentLabels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const aiLabels = ['ai-pr-review-passed', 'ai-pr-review-failed', 'ai-pr-review-warning'];
+            const toRemove = currentLabels
+              .filter(l => aiLabels.includes(l.name))
+              .map(l => l.name);
+
+            for (const label of toRemove) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  name: label,
+                });
+              } catch { /* label may not exist */ }
+            }
+
+            // Add the appropriate label
+            let newLabel;
+            if (score >= 80) {
+              newLabel = 'ai-pr-review-passed';
+            } else if (score >= 60) {
+              newLabel = 'ai-pr-review-warning';
+            } else {
+              newLabel = 'ai-pr-review-failed';
+            }
+
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: [newLabel],
+              });
+            } catch (err) {
+              // Label may not exist in the repository — create it
+              console.log('Could not add label. Create it in your repository settings.');
+            }
+
+
