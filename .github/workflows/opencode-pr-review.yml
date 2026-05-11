@@ -125,21 +125,21 @@ jobs:
             ':!*.ttf' \
             2>/dev/null || echo "(empty diff or error)")
 
-          # Handle empty or large diffs
+          # Write diff to file to avoid bash special character issues when inlining
+          # Base64 encoding ensures parentheses, quotes, backticks, etc. don't break the shell
           if [ -z "$DIFF" ]; then
             echo "diff_empty=true" >> $GITHUB_OUTPUT
-            echo "diff_content=(no diff — no Playwright/TypeScript files changed)" >> $GITHUB_OUTPUT
+            echo -n "" | base64 > /tmp/pr-diff.b64
           else
             # Truncate diff to prevent token overflow (conservative limit)
             MAX_DIFF_LENGTH=$(( 4 * 1024 * 50 ))  # ~50K tokens worth of diff
             if [ ${#DIFF} -gt $MAX_DIFF_LENGTH ]; then
               DIFF="${DIFF:0:$MAX_DIFF_LENGTH}"
-              DIFF+="\n\n[... diff truncated at ${MAX_DIFF_LENGTH} characters — only the first part was analyzed ...]"
+              DIFF+=$'\n\n[... diff truncated at '"${MAX_DIFF_LENGTH}"$' characters — only the first part was analyzed ...]'
             fi
+            # Write base64-encoded diff to file (safe from shell interpretation)
+            echo -n "$DIFF" | base64 > /tmp/pr-diff.b64
             echo "diff_empty=false" >> $GITHUB_OUTPUT
-            echo "diff_content<<EOF_DIFF" >> $GITHUB_OUTPUT
-            echo "$DIFF" >> $GITHUB_OUTPUT
-            echo "EOF_DIFF" >> $GITHUB_OUTPUT
           fi
 
       # -----------------------------------------------------------------------
@@ -168,16 +168,15 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           AI_REVIEW_MODEL: ${{ secrets.AI_REVIEW_MODEL || 'gpt-4o' }}
         run: |
-          echo "DIFF_EMPTY=${{ steps.diff.outputs.diff_empty }}" >> $GITHUB_ENV
+          # Decode the diff from base64 (avoids bash special character issues)
+          base64 -d /tmp/pr-diff.b64 > /tmp/pr-diff.txt 2>/dev/null || true
 
-          if [ "${{ steps.diff.outputs.diff_empty }}" = "true" ]; then
+          if [ ! -s /tmp/pr-diff.txt ]; then
             echo "review_output=No issues found. No Playwright/TypeScript code changed." >> $GITHUB_OUTPUT
             echo "review_score=100" >> $GITHUB_OUTPUT
             echo "review_rating=Excellent" >> $GITHUB_OUTPUT
             exit 0
           fi
-
-          echo "${{ steps.diff.outputs.diff_content }}" > /tmp/pr-diff.txt
 
           echo "Running AI review via OpenAI..."
           REVIEW=$(OPENAI_API_KEY="$OPENAI_API_KEY" \
