@@ -172,9 +172,9 @@ jobs:
           base64 -d /tmp/pr-diff.b64 > /tmp/pr-diff.txt 2>/dev/null || true
 
           if [ ! -s /tmp/pr-diff.txt ]; then
-            echo "review_output=No issues found. No Playwright/TypeScript code changed." >> $GITHUB_OUTPUT
-            echo "review_score=100" >> $GITHUB_OUTPUT
-            echo "review_rating=Excellent" >> $GITHUB_OUTPUT
+            echo -n "No issues found. No Playwright/TypeScript code changed." > /tmp/review-output.md
+            echo -n "100" > /tmp/review-score.txt
+            echo -n "Excellent" > /tmp/review-rating.txt
             exit 0
           fi
 
@@ -186,32 +186,28 @@ jobs:
             --skill-file .ai/skills/playwright-pr-review.md \
             --prompt-file .ai/prompts/pr-review.prompt.md \
             --diff-file /tmp/pr-diff.txt \
-            2>&1 || echo "(AI review script failed — see logs)")
+            2>&1 || echo "(AI review script failed -- see logs)")
 
-          # Write review output
-          echo "review_output<<EOF_REVIEW" >> $GITHUB_OUTPUT
-          echo "$REVIEW" >> $GITHUB_OUTPUT
-          echo "EOF_REVIEW" >> $GITHUB_OUTPUT
+          # Write review output to file (avoids shell/JS special character issues from $GITHUB_OUTPUT)
+          echo "$REVIEW" > /tmp/review-output.md
 
           # Extract score from review output (format: "## PR Quality Score: <N>/100")
           SCORE=$(echo "$REVIEW" | grep -oP 'PR Quality Score:\s*\K(\d+)' || echo "")
           if [ -z "$SCORE" ]; then
-            # Fallback: parse severity counts to compute score
             CRIT=$(echo "$REVIEW" | grep -c '^|.*Critical.*|' || echo 0)
             MAJ=$(echo "$REVIEW" | grep -c '^|.*Major.*|' || echo 0)
             MIN=$(echo "$REVIEW" | grep -c '^|.*Minor.*|' || echo 0)
             SCORE=$(( 100 - (CRIT * 15) - (MAJ * 10) - (MIN * 5) ))
             [ "$SCORE" -lt 0 ] && SCORE=0
           fi
-          echo "review_score=$SCORE" >> $GITHUB_OUTPUT
+          echo -n "$SCORE" > /tmp/review-score.txt
 
-          # Compute rating
           if [ "$SCORE" -eq 100 ]; then RATING="Excellent"
           elif [ "$SCORE" -ge 80 ]; then RATING="Good"
           elif [ "$SCORE" -ge 60 ]; then RATING="Needs Work"
           else RATING="Failing"
           fi
-          echo "review_rating=$RATING" >> $GITHUB_OUTPUT
+          echo -n "$RATING" > /tmp/review-rating.txt
 
       # -----------------------------------------------------------------------
       # Step 6: Post review as a PR comment
@@ -222,13 +218,19 @@ jobs:
         id: comment
         with:
           script: |
+            const fs = require('fs');
+
+            // Read review artifacts from files (avoids shell/JS expansion issues)
+            const reviewOutput = fs.readFileSync('/tmp/review-output.md', 'utf8');
+            const score = fs.readFileSync('/tmp/review-score.txt', 'utf8');
+            const rating = fs.readFileSync('/tmp/review-rating.txt', 'utf8');
+
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
 
-            // Find and delete any previous AI review comment
             const marker = '<!-- opencode-pr-review -->';
             for (const comment of comments) {
               if (comment.body && comment.body.includes(marker)) {
@@ -240,22 +242,16 @@ jobs:
               }
             }
 
-            // Build the review body
-            const reviewOutput = `${{ steps.review.outputs.review_output }}`;
-            const score = `${{ steps.review.outputs.review_score }}`;
-            const rating = `${{ steps.review.outputs.review_rating }}`;
-
-            const header = `## 🤖 AI PR Review\n\n`;
+            const header = '## 🤖 AI PR Review\n\n';
             const footer = `\n\n---\n*This review was generated automatically by the AI PR Review workflow. Human approval is required before merge.*\n${marker}`;
 
             let body;
             if (reviewOutput.includes('No issues found')) {
-              body = header + `**No issues found.** PR adheres to framework standards.\n\n**PR Quality Score:** ${score}/100 — ${rating}` + footer;
+              body = header + '**No issues found.** PR adheres to framework standards.\n\n**PR Quality Score:** ' + score + '/100 — ' + rating + footer;
             } else {
               body = header + reviewOutput + footer;
             }
 
-            // Post the new review comment
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -274,8 +270,9 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const score = parseInt('${{ steps.review.outputs.review_score }}' || '100', 10);
-            const rating = '${{ steps.review.outputs.review_rating }}' || 'Good';
+            const fs = require('fs');
+            const score = parseInt(fs.readFileSync('/tmp/review-score.txt', 'utf8') || '100', 10);
+            const rating = fs.readFileSync('/tmp/review-rating.txt', 'utf8') || 'Good';
             const headSha = '${{ github.event.pull_request.head.sha }}';
 
             // Determine conclusion based on score
@@ -315,7 +312,8 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const score = parseInt('${{ steps.review.outputs.review_score }}' || '100', 10);
+            const fs = require('fs');
+            const score = parseInt(fs.readFileSync('/tmp/review-score.txt', 'utf8') || '100', 10);
             const labels = new Set();
 
             // Remove existing AI review labels
@@ -363,25 +361,4 @@ jobs:
               console.log('Could not add label. Create it in your repository settings.');
             }
 
-  # ===========================================================================
-  # Job 2: summary-report (optional)
-  #   Posts a summary to the workflow run for easy visibility.
-  # ===========================================================================
-  summary-report:
-    needs: review
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Post workflow summary
-        run: |
-          echo "## AI PR Review Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| PR | #${{ github.event.pull_request.number }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Branch | ${{ github.event.pull_request.head.ref }} → ${{ github.event.pull_request.base.ref }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Author | ${{ github.event.pull_request.user.login }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Quality Score | ${{ needs.review.outputs.review_score || 'N/A' }} / 100 |" >> $GITHUB_STEP_SUMMARY
-          echo "| Rating | ${{ needs.review.outputs.review_rating || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> **Note:** This is an automated review. A human maintainer must approve the PR before merge." >> $GITHUB_STEP_SUMMARY
+
