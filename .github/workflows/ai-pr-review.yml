@@ -3,7 +3,7 @@
 # =============================================================================
 #
 # This workflow triggers on pull requests to `main`, analyzes the git diff
-# using an AI agent (OpenCode or OpenAI-compatible API), and posts a
+# using OpenAI's API, and posts a
 # structured code review with severity-labeled findings and a quality score.
 #
 # Design Principles:
@@ -158,11 +158,10 @@ jobs:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
       # -----------------------------------------------------------------------
-      # Step 5 (Option A): Run AI review via OpenCode CLI
-      #     Uses the OpenCode CLI tool to run the PR review skill against the
+      # Step 5: Run AI review via OpenAI API
       #     prompt template. Falls back to API-based review if not configured.
       # -----------------------------------------------------------------------
-      - name: Run AI review (OpenCode)
+      - name: Run AI review
         id: review
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
