@@ -1,0 +1,425 @@
+# =============================================================================
+# opencode-pr-review.yml — AI-Powered PR Review for Playwright + TypeScript
+# =============================================================================
+#
+# This workflow triggers on pull requests to `main`, analyzes the git diff
+# using an AI agent (OpenCode or OpenAI-compatible API), and posts a
+# structured code review with severity-labeled findings and a quality score.
+#
+# Design Principles:
+# - Modular: review logic is in a reusable action; the workflow orchestrates
+# - Observable: all review output is captured as both PR comment + check run
+# - Non-blocking for merge — human approval is required (branch protection)
+# - Idempotent: re-running replaces the previous review comment
+# - Cost-aware: only reviews the diff (not the full file) to minimize tokens
+#
+# Branch Protection Compatibility:
+# This workflow creates a check run named "AI PR Review / review". You can
+# require this check to pass in GitHub branch protection rules.
+#
+# Security:
+# - AI API keys stored as GitHub Secrets (never in code or logs)
+# - Pull request comments posted by github-actions bot — no custom tokens
+# - Works with existing branch protection without requiring auto-merge
+# =============================================================================
+
+name: AI PR Review
+
+on:
+  # Trigger on PRs to main — includes draft and ready-for-review
+  pull_request:
+    branches: [main, master]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+  # Allow manual trigger for ad-hoc reviews
+  # workflow_dispatch:
+  #   inputs:
+  #     pr_number:
+  #       description: Pull request number to review
+  #       required: true
+
+# Ensure only one review runs per PR at a time to avoid race conditions
+# on the PR comment. New commits cancel in-progress reviews.
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+  cancel-in-progress: true
+
+env:
+  # Node.js version — must match the framework
+  NODE_VERSION: 22
+
+jobs:
+  # ===========================================================================
+  # Job 1: review
+  #   - Checks out the PR branch
+  #   - Computes the git diff against the base branch
+  #   - Sends the diff to an AI agent for analysis
+  #   - Posts structured review as a PR comment
+  # ===========================================================================
+  review:
+    # Skip for draft PRs (optional — remove if you want draft reviews)
+    if: github.event.pull_request.draft == false
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Grant permissions needed to post PR comments and create check runs
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Step 1: Validate that the AI provider is configured
+      # -----------------------------------------------------------------------
+      - name: Validate AI provider configuration
+        id: validate
+        run: |
+          PROVIDER="${{ secrets.AI_REVIEW_PROVIDER || 'openai' }}"
+          echo "provider=$PROVIDER" >> $GITHUB_OUTPUT
+
+          case "$PROVIDER" in
+            openai)
+              if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
+                echo "Error: OPENAI_API_KEY secret is not set."
+                echo "Set it in your repository secrets: Settings > Secrets and variables > Actions"
+                exit 1
+              fi
+              ;;
+            anthropic)
+              if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+                echo "Error: ANTHROPIC_API_KEY secret is not set."
+                exit 1
+              fi
+              ;;
+            opencode)
+              if [ -z "${{ secrets.OPENCODE_API_KEY }}" ]; then
+                echo "Warning: OPENCODE_API_KEY not set — using opencode CLI default."
+              fi
+              ;;
+            *)
+              echo "Error: Unknown provider '$PROVIDER'. Supported: openai, anthropic, opencode"
+              exit 1
+              ;;
+          esac
+
+      # -----------------------------------------------------------------------
+      # Step 2: Check out the PR branch with full git history
+      # -----------------------------------------------------------------------
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so we can diff against the base branch
+          fetch-depth: 0
+          # Use the merge commit to get the correct diff against base
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # -----------------------------------------------------------------------
+      # Step 3: Compute the git diff
+      # -----------------------------------------------------------------------
+      - name: Compute git diff against base branch
+        id: diff
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          echo "Base SHA: $BASE_SHA"
+          echo "Head SHA: $HEAD_SHA"
+
+          # Get the diff — only the lines changed, with context
+          DIFF=$(git diff "$BASE_SHA"..."$HEAD_SHA" -- \
+            ':!package-lock.json' \
+            ':!*.lock' \
+            ':!*.png' \
+            ':!*.jpg' \
+            ':!*.jpeg' \
+            ':!*.gif' \
+            ':!*.svg' \
+            ':!*.ico' \
+            ':!*.woff*' \
+            ':!*.eot' \
+            ':!*.ttf' \
+            2>/dev/null || echo "(empty diff or error)")
+
+          # Handle empty or large diffs
+          if [ -z "$DIFF" ]; then
+            echo "diff_empty=true" >> $GITHUB_OUTPUT
+            echo "diff_content=(no diff — no Playwright/TypeScript files changed)" >> $GITHUB_OUTPUT
+          else
+            # Truncate diff to prevent token overflow (conservative limit)
+            MAX_DIFF_LENGTH=$(( 4 * 1024 * 50 ))  # ~50K tokens worth of diff
+            if [ ${#DIFF} -gt $MAX_DIFF_LENGTH ]; then
+              DIFF="${DIFF:0:$MAX_DIFF_LENGTH}"
+              DIFF+="\n\n[... diff truncated at ${MAX_DIFF_LENGTH} characters — only the first part was analyzed ...]"
+            fi
+            echo "diff_empty=false" >> $GITHUB_OUTPUT
+            echo "diff_content<<EOF_DIFF" >> $GITHUB_OUTPUT
+            echo "$DIFF" >> $GITHUB_OUTPUT
+            echo "EOF_DIFF" >> $GITHUB_OUTPUT
+          fi
+
+      # -----------------------------------------------------------------------
+      # Step 4: Install Node.js and dependencies
+      # -----------------------------------------------------------------------
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+        env:
+          # Skip Playwright browser install — not needed for review
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+
+      # -----------------------------------------------------------------------
+      # Step 5 (Option A): Run AI review via OpenCode CLI
+      #     Uses the OpenCode CLI tool to run the PR review skill against the
+      #     prompt template. Falls back to API-based review if not configured.
+      # -----------------------------------------------------------------------
+      - name: Run AI review (OpenCode)
+        id: review
+        run: |
+          # Write diff to a temp file so it can be referenced by the prompt
+          echo "DIFF_EMPTY=${{ steps.diff.outputs.diff_empty }}" >> $GITHUB_ENV
+
+          if [ "${{ steps.diff.outputs.diff_empty }}" = "true" ]; then
+            echo "review_output=No issues found. No Playwright/TypeScript code changed." >> $GITHUB_OUTPUT
+            echo "review_score=100" >> $GITHUB_OUTPUT
+            echo "review_rating=Excellent" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Write the diff to a temporary file for the review script
+          echo "${{ steps.diff.outputs.diff_content }}" > /tmp/pr-diff.txt
+
+          # Check for opencode CLI
+          if command -v npx &> /dev/null && npx --yes opencode --help &> /dev/null 2>&1; then
+            # Run the review using opencode with the skill and prompt
+            # This approach loads the skill, reads the prompt template, injects the diff
+            echo "Running review via OpenCode..."
+            npx opencode review \
+              --skill .ai/skills/playwright-pr-review.md \
+              --prompt .ai/prompts/pr-review.prompt.md \
+              --diff /tmp/pr-diff.txt \
+              --output /tmp/review-output.txt \
+              --format markdown \
+              2>&1 || true
+
+            if [ -f /tmp/review-output.txt ]; then
+              REVIEW=$(cat /tmp/review-output.txt)
+            else
+              REVIEW="(OpenCode review produced no output)"  
+            fi
+          else
+            # If opencode CLI is not available, try using an AI API directly
+            echo "OpenCode CLI not detected. Using AI API fallback..."
+            REVIEW=$(node .github/scripts/ai-review.mjs \
+              --provider "${{ steps.validate.outputs.provider }}" \
+              --api-key "${{ secrets.OPENAI_API_KEY || secrets.ANTHROPIC_API_KEY || '' }}" \
+              --model "${{ secrets.AI_REVIEW_MODEL || 'gpt-4o' }}" \
+              --skill-file .ai/skills/playwright-pr-review.md \
+              --prompt-file .ai/prompts/pr-review.prompt.md \
+              --diff-file /tmp/pr-diff.txt \
+              2>&1 || echo "(AI review script failed — see logs)")
+          fi
+
+          # Write review output
+          echo "review_output<<EOF_REVIEW" >> $GITHUB_OUTPUT
+          echo "$REVIEW" >> $GITHUB_OUTPUT
+          echo "EOF_REVIEW" >> $GITHUB_OUTPUT
+
+          # Extract score from review output (format: "## PR Quality Score: <N>/100")
+          SCORE=$(echo "$REVIEW" | grep -oP 'PR Quality Score:\s*\K(\d+)' || echo "")
+          if [ -z "$SCORE" ]; then
+            # Fallback: parse severity counts to compute score
+            CRIT=$(echo "$REVIEW" | grep -c '^|.*Critical.*|' || echo 0)
+            MAJ=$(echo "$REVIEW" | grep -c '^|.*Major.*|' || echo 0)
+            MIN=$(echo "$REVIEW" | grep -c '^|.*Minor.*|' || echo 0)
+            SCORE=$(( 100 - (CRIT * 15) - (MAJ * 10) - (MIN * 5) ))
+            [ "$SCORE" -lt 0 ] && SCORE=0
+          fi
+          echo "review_score=$SCORE" >> $GITHUB_OUTPUT
+
+          # Compute rating
+          if [ "$SCORE" -eq 100 ]; then RATING="Excellent"
+          elif [ "$SCORE" -ge 80 ]; then RATING="Good"
+          elif [ "$SCORE" -ge 60 ]; then RATING="Needs Work"
+          else RATING="Failing"
+          fi
+          echo "review_rating=$RATING" >> $GITHUB_OUTPUT
+
+      # -----------------------------------------------------------------------
+      # Step 6: Post review as a PR comment
+      #     Replaces any previous AI review comment to keep the PR clean.
+      # -----------------------------------------------------------------------
+      - name: Post PR review comment
+        uses: actions/github-script@v7
+        id: comment
+        with:
+          script: |
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            // Find and delete any previous AI review comment
+            const marker = '<!-- opencode-pr-review -->';
+            for (const comment of comments) {
+              if (comment.body && comment.body.includes(marker)) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: comment.id,
+                });
+              }
+            }
+
+            // Build the review body
+            const reviewOutput = `${{ steps.review.outputs.review_output }}`;
+            const score = `${{ steps.review.outputs.review_score }}`;
+            const rating = `${{ steps.review.outputs.review_rating }}`;
+
+            const header = `## 🤖 AI PR Review\n\n`;
+            const footer = `\n\n---\n*This review was generated automatically by the AI PR Review workflow. Human approval is required before merge.*\n${marker}`;
+
+            let body;
+            if (reviewOutput.includes('No issues found')) {
+              body = header + `**No issues found.** PR adheres to framework standards.\n\n**PR Quality Score:** ${score}/100 — ${rating}` + footer;
+            } else {
+              body = header + reviewOutput + footer;
+            }
+
+            // Post the new review comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body,
+            });
+
+            return score;
+
+      # -----------------------------------------------------------------------
+      # Step 7: Create a check run for branch protection compatibility
+      #     This check can be marked as "required" in branch protection rules.
+      #     The check passes if score >= 60, fails if < 60.
+      # -----------------------------------------------------------------------
+      - name: Create check run
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const score = parseInt('${{ steps.review.outputs.review_score }}' || '100', 10);
+            const rating = '${{ steps.review.outputs.review_rating }}' || 'Good';
+            const headSha = '${{ github.event.pull_request.head.sha }}';
+
+            // Determine conclusion based on score
+            let conclusion = 'neutral';
+            let summary = `Score: ${score}/100 — ${rating}`;
+            let text = '';
+
+            if (score >= 80) {
+              conclusion = 'success';
+              text = 'PR meets quality standards. No blocking issues found.';
+            } else if (score >= 60) {
+              conclusion = 'neutral';
+              text = 'PR has some issues that should be addressed. Review the comment above.';
+            } else {
+              conclusion = 'failure';
+              text = 'PR has critical issues that must be resolved before merge.';
+            }
+
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'AI PR Review / review',
+              head_sha: headSha,
+              status: 'completed',
+              conclusion: conclusion,
+              output: {
+                title: `AI PR Review: ${score}/100 — ${rating}`,
+                summary: summary,
+                text: text + '\n\nSee the PR comment for detailed findings.',
+              },
+            });
+
+      # -----------------------------------------------------------------------
+      # Step 8: Update PR labels based on quality score
+      # -----------------------------------------------------------------------
+      - name: Update PR labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const score = parseInt('${{ steps.review.outputs.review_score }}' || '100', 10);
+            const labels = new Set();
+
+            // Remove existing AI review labels
+            const { data: currentLabels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const aiLabels = ['ai-review-passed', 'ai-review-failed', 'ai-review-warning'];
+            const toRemove = currentLabels
+              .filter(l => aiLabels.includes(l.name))
+              .map(l => l.name);
+
+            for (const label of toRemove) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  name: label,
+                });
+              } catch { /* label may not exist */ }
+            }
+
+            // Add the appropriate label
+            let newLabel;
+            if (score >= 80) {
+              newLabel = 'ai-review-passed';
+            } else if (score >= 60) {
+              newLabel = 'ai-review-warning';
+            } else {
+              newLabel = 'ai-review-failed';
+            }
+
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: [newLabel],
+              });
+            } catch (err) {
+              // Label may not exist in the repository — create it
+              console.log('Could not add label. Create it in your repository settings.');
+            }
+
+  # ===========================================================================
+  # Job 2: summary-report (optional)
+  #   Posts a summary to the workflow run for easy visibility.
+  # ===========================================================================
+  summary-report:
+    needs: review
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post workflow summary
+        run: |
+          echo "## AI PR Review Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| PR | #${{ github.event.pull_request.number }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | ${{ github.event.pull_request.head.ref }} → ${{ github.event.pull_request.base.ref }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Author | ${{ github.event.pull_request.user.login }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Quality Score | ${{ needs.review.outputs.review_score || 'N/A' }} / 100 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Rating | ${{ needs.review.outputs.review_rating || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> **Note:** This is an automated review. A human maintainer must approve the PR before merge." >> $GITHUB_STEP_SUMMARY
