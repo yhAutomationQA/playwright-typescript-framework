@@ -363,7 +363,7 @@ jobs:
               issue_number: context.issue.number,
             });
 
-            const aiLabels = ['ai-review-passed', 'ai-review-failed', 'ai-review-warning'];
+            const aiLabels = ['ai-pr-review-passed', 'ai-pr-review-failed', 'ai-pr-review-warning'];
             const toRemove = currentLabels
               .filter(l => aiLabels.includes(l.name))
               .map(l => l.name);
@@ -382,11 +382,11 @@ jobs:
             // Add the appropriate label
             let newLabel;
             if (score >= 80) {
-              newLabel = 'ai-review-passed';
+              newLabel = 'ai-pr-review-passed';
             } else if (score >= 60) {
-              newLabel = 'ai-review-warning';
+              newLabel = 'ai-pr-review-warning';
             } else {
-              newLabel = 'ai-review-failed';
+              newLabel = 'ai-pr-review-failed';
             }
 
             try {
