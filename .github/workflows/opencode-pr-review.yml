@@ -72,31 +72,36 @@ jobs:
     steps:
       # -----------------------------------------------------------------------
       # Step 1: Validate that the AI provider is configured
+      #   Secrets are NOT expanded directly in run blocks (security linter).
+      #   Instead, they are passed via env and checked as env vars.
       # -----------------------------------------------------------------------
       - name: Validate AI provider configuration
         id: validate
+        env:
+          AI_REVIEW_PROVIDER: ${{ secrets.AI_REVIEW_PROVIDER }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          PROVIDER="${{ secrets.AI_REVIEW_PROVIDER || 'openai' }}"
-          echo "provider=$PROVIDER" >> $GITHUB_OUTPUT
+          PROVIDER="${AI_REVIEW_PROVIDER:-openai}"
+          echo "provider=$PROVIDER" >> "$GITHUB_OUTPUT"
 
           case "$PROVIDER" in
             openai)
-              if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
+              if [ -z "$OPENAI_API_KEY" ]; then
                 echo "Error: OPENAI_API_KEY secret is not set."
                 echo "Set it in your repository secrets: Settings > Secrets and variables > Actions"
                 exit 1
               fi
               ;;
             anthropic)
-              if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+              if [ -z "$ANTHROPIC_API_KEY" ]; then
                 echo "Error: ANTHROPIC_API_KEY secret is not set."
+                echo "Set it in your repository secrets: Settings > Secrets and variables > Actions"
                 exit 1
               fi
               ;;
             opencode)
-              if [ -z "${{ secrets.OPENCODE_API_KEY }}" ]; then
-                echo "Warning: OPENCODE_API_KEY not set — using opencode CLI default."
-              fi
+              echo "Using OpenCode CLI (no API key validation needed)."
               ;;
             *)
               echo "Error: Unknown provider '$PROVIDER'. Supported: openai, anthropic, opencode"
@@ -181,6 +186,10 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Run AI review (OpenCode)
         id: review
+        env:
+          # Secrets passed via env to avoid expanding in run blocks
+          AI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.ANTHROPIC_API_KEY || '' }}
+          AI_REVIEW_MODEL: ${{ secrets.AI_REVIEW_MODEL || 'gpt-4o' }}
         run: |
           # Write diff to a temp file so it can be referenced by the prompt
           echo "DIFF_EMPTY=${{ steps.diff.outputs.diff_empty }}" >> $GITHUB_ENV
@@ -215,11 +224,13 @@ jobs:
             fi
           else
             # If opencode CLI is not available, try using an AI API directly
+            # Secrets are passed via environment variables, not on the command line,
+            # to avoid security linter warnings and prevent secret leakage in logs.
             echo "OpenCode CLI not detected. Using AI API fallback..."
-            REVIEW=$(node .github/scripts/ai-review.mjs \
+            REVIEW=$(AI_REVIEW_API_KEY="$AI_API_KEY" \
+              node .github/scripts/ai-review.mjs \
               --provider "${{ steps.validate.outputs.provider }}" \
-              --api-key "${{ secrets.OPENAI_API_KEY || secrets.ANTHROPIC_API_KEY || '' }}" \
-              --model "${{ secrets.AI_REVIEW_MODEL || 'gpt-4o' }}" \
+              --model "$AI_REVIEW_MODEL" \
               --skill-file .ai/skills/playwright-pr-review.md \
               --prompt-file .ai/prompts/pr-review.prompt.md \
               --diff-file /tmp/pr-diff.txt \
