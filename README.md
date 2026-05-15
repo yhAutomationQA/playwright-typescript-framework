@@ -1,6 +1,6 @@
 # Playwright + TypeScript Automation Framework
 
-Enterprise-grade test automation framework using Playwright, TypeScript, and Node.js. Features POM architecture, multi-environment config, API client, Allure reporting, Docker execution, and CI/CD (Jenkins + GitHub Actions).
+Test automation framework using Playwright, TypeScript, and Node.js. Features POM architecture, multi-environment config, API client, Allure reporting, Docker execution, and CI/CD (Jenkins + GitHub Actions).
 
 ## Setup
 
